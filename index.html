@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+  />
+  <meta name="theme-color" content="#4ECDC4" />
+  <meta name="description" content="運動を記録して消費カロリーを見える化。ゆるキャラとスタンプで毎日続く、あなたのスリム相棒。" />
+  <title>slimmate — スリムの相棒</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="icon.svg" />
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <header class="app-header">
+      <div class="brand">
+        <span class="brand-logo" aria-hidden="true">🌿</span>
+        <span class="brand-name">slim<span>mate</span></span>
+      </div>
+      <div id="streakChip" class="streak-chip" hidden>
+        <span class="flame">🔥</span><span id="streakChipNum">0</span>日連続
+      </div>
+    </header>
+
+    <main id="view" class="view"></main>
+
+    <nav class="tabbar" id="tabbar">
+      <button class="tab" data-tab="home">
+        <span class="tab-ico">🏠</span><span class="tab-label">ホーム</span>
+      </button>
+      <button class="tab" data-tab="log">
+        <span class="tab-ico">🏃</span><span class="tab-label">運動</span>
+      </button>
+      <button class="tab" data-tab="food">
+        <span class="tab-ico">🍽️</span><span class="tab-label">食事</span>
+      </button>
+      <button class="tab" data-tab="stamps">
+        <span class="tab-ico">🏆</span><span class="tab-label">スタンプ</span>
+      </button>
+      <button class="tab" data-tab="settings">
+        <span class="tab-ico">⚙️</span><span class="tab-label">設定</span>
+      </button>
+    </nav>
+  </div>
+
+  <div id="toastHost" class="toast-host" aria-live="polite"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
