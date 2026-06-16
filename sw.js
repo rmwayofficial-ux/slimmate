@@ -1,5 +1,5 @@
 /* slimmate service worker — オフライン対応 & ホーム画面追加用 */
-const CACHE = "slimmate-v20";
+const CACHE = "slimmate-v21";
 const ASSETS = [
   "./",
   "./index.html",
