@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff9f0"/>
+      <stop offset="0.6" stop-color="#e6faf7"/>
+      <stop offset="1" stop-color="#a8e6df"/>
+    </linearGradient>
+    <linearGradient id="logoG" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4ecdc4"/>
+      <stop offset="1" stop-color="#38b2a8"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="630" fill="url(#bg)"/>
+
+  <!-- 紙吹雪 -->
+  <circle cx="80"   cy="120" r="12" fill="#ff6b6b"/>
+  <circle cx="1110" cy="100" r="14" fill="#4ecdc4"/>
+  <circle cx="160"  cy="500" r="10" fill="#ffd166"/>
+  <circle cx="1080" cy="510" r="14" fill="#a78bfa"/>
+  <rect x="60"   y="340" width="14" height="14" rx="3" fill="#a78bfa" transform="rotate(22 67 347)"/>
+  <rect x="1130" y="340" width="14" height="14" rx="3" fill="#ff6b6b" transform="rotate(-18 1137 347)"/>
+
+  <!-- 左カラム: タイトル -->
+  <g transform="translate(80,180)">
+    <text x="0" y="0" font-family="Hiragino Sans, Noto Sans JP, sans-serif" font-size="120" font-weight="900" fill="#2d3142">
+      🌿 <tspan fill="#2d3142">slim</tspan><tspan fill="url(#logoG)">mate</tspan>
+    </text>
+    <text x="6" y="80" font-family="Hiragino Sans, Noto Sans JP, sans-serif" font-size="44" font-weight="800" fill="#38b2a8">スリムの相棒</text>
+    <text x="6" y="170" font-family="Hiragino Sans, Noto Sans JP, sans-serif" font-size="28" font-weight="700" fill="#6b7280">運動と食事を記録して、</text>
+    <text x="6" y="208" font-family="Hiragino Sans, Noto Sans JP, sans-serif" font-size="28" font-weight="700" fill="#6b7280">あるるんと毎日つづける。</text>
+    <g transform="translate(6,260)">
+      <rect x="0"   y="0" width="170" height="40" rx="20" fill="#ffe9e7"/>
+      <text x="14" y="27" font-size="20" font-weight="800" fill="#ff6b6b">🔥 スタンプ</text>
+      <rect x="186" y="0" width="170" height="40" rx="20" fill="#fff7da"/>
+      <text x="200" y="27" font-size="20" font-weight="800" fill="#c08c10">🏅 称号レベル</text>
+      <rect x="372" y="0" width="150" height="40" rx="20" fill="#e6faf7"/>
+      <text x="386" y="27" font-size="20" font-weight="800" fill="#38b2a8">🎀 着せ替え</text>
+    </g>
+  </g>
+
+  <!-- 右カラム: あるるん -->
+  <g transform="translate(780,150)">
+    <ellipse cx="180" cy="332" rx="120" ry="18" fill="#000" opacity="0.08"/>
+    <path d="M40 60 q14 -50 38 -10" stroke="#7bd3cb" stroke-width="14" fill="none" stroke-linecap="round"/>
+    <circle cx="78" cy="34" r="16" fill="#8fdcd4"/>
+    <ellipse cx="180" cy="190" rx="130" ry="124" fill="#a8e6df"/>
+    <ellipse cx="180" cy="196" rx="110" ry="104" fill="#c9f2ed"/>
+    <!-- happy face -->
+    <path d="M120 170 q18 -16 36 0" stroke="#2d3142" stroke-width="9" fill="none" stroke-linecap="round"/>
+    <path d="M204 170 q18 -16 36 0" stroke="#2d3142" stroke-width="9" fill="none" stroke-linecap="round"/>
+    <path d="M138 220 q36 36 72 0 q-36 14 -72 0" fill="#2d3142"/>
+    <circle cx="100" cy="208" r="18" fill="#ffb3b3" opacity="0.8"/>
+    <circle cx="260" cy="208" r="18" fill="#ffb3b3" opacity="0.8"/>
+    <!-- crown skin -->
+    <g transform="translate(120,40)">
+      <path d="M0 40 l12 -38 l22 28 l26 -38 l26 38 l22 -28 l12 38 z" fill="#ffd166" stroke="#caa12a" stroke-width="3" stroke-linejoin="round"/>
+      <rect x="0" y="40" width="120" height="12" rx="3" fill="#f4c13a"/>
+      <circle cx="22"  cy="14" r="5" fill="#ff6b6b"/>
+      <circle cx="60"  cy="6"  r="6" fill="#4ecdc4"/>
+      <circle cx="98"  cy="14" r="5" fill="#a78bfa"/>
+    </g>
+  </g>
+
+  <!-- フッター -->
+  <rect x="0" y="590" width="1200" height="40" fill="#2d3142" opacity="0.04"/>
+  <text x="600" y="616" font-family="Hiragino Sans, Noto Sans JP, sans-serif" font-size="22" font-weight="700" text-anchor="middle" fill="#6b7280">https://rmwayofficial-ux.github.io/slimmate/</text>
+</svg>

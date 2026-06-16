@@ -1,5 +1,5 @@
 /* slimmate service worker — オフライン対応 & ホーム画面追加用 */
-const CACHE = "slimmate-v19";
+const CACHE = "slimmate-v20";
 const ASSETS = [
   "./",
   "./index.html",
@@ -7,6 +7,9 @@ const ASSETS = [
   "./app.js",
   "./manifest.webmanifest",
   "./icon.svg",
+  "./icon-192.png",
+  "./icon-512.png",
+  "./og-image.png",
 ];
 
 self.addEventListener("install", (e) => {
