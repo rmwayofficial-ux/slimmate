@@ -14,7 +14,20 @@ const EXERCISES = [
   { id: "swim", name: "水泳", emoji: "🏊", mets: 7.0 },
   { id: "dance", name: "ダンス", emoji: "💃", mets: 5.0 },
 ];
-const exById = (id) => EXERCISES.find((e) => e.id === id);
+// プリセット + カスタム運動の合算
+function allExercises() {
+  const customs = (state && state.customExercises) ? state.customExercises : [];
+  return EXERCISES.concat(customs);
+}
+const exById = (id) => allExercises().find((e) => e.id === id);
+// お気に入りを先頭に並び替え
+function sortedExercises() {
+  const favs = (state && state.favoriteExercises) ? state.favoriteExercises : [];
+  const all = allExercises();
+  const pinned = favs.map((id) => all.find((e) => e.id === id)).filter(Boolean);
+  const rest = all.filter((e) => !favs.includes(e.id));
+  return pinned.concat(rest);
+}
 
 /* ---------- 状態管理 (localStorage) ---------- */
 const STORE_KEY = "slimmate.v1";
@@ -22,17 +35,42 @@ const DEFAULT_STATE = {
   profile: {
     weightKg: null,
     dailyGoalKcal: 150,
+    waterGoal: 8, // コップ数（1杯=約250mL）
     nudge: { enabled: false, startHour: 10, endHour: 18, intervalMin: 10 },
     // 🔔 あるるんアラーム設定
     alarm: { startHour: 12, startMin: 0, intervalMin: 10, onSnackEat: true },
     // 🔊 あるるんの声（高さ・速さを好みで調整）
     voice: { pitch: 2.0, rate: 1.1 },
+    // 🌙 表示テーマ "auto" | "light" | "dark"
+    theme: "auto",
+    // 🎀 マスコットの着せ替え（"default"|"bow"|"cap"|"crown"|"santa"）
+    mascotSkin: "default",
+    // ⏰ 朝・夜の声かけ
+    morningCall: { enabled: false, hour: 8, min: 0 },
+    nightCall: { enabled: false, hour: 22, min: 0 },
+    // 🏠 iOSホーム画面追加ガイドを閉じたか
+    iosBannerDismissed: false,
     onboarded: false,
   },
   logs: [], // { id, date:"YYYY-MM-DD", typeId, minutes, kcal, memo, ts }
   snacks: [], // { date, action:"resisted"|"ate", ts }
   foods: [], // { id, date, name, kcal, memo, photo, ts }
   alarmRun: { active: false, nextFireTs: 0 }, // あるるんアラームの稼働状態
+  feedback: [], // { id, ts, category, rating, text, contact, status:"sent_email"|"copied" }
+  // ⭐ お気に入り（運動IDの配列 / 食事の name の配列）
+  favoriteExercises: [],
+  favoriteFoods: [],
+  // ✨ ユーザー追加カスタム種目
+  customExercises: [], // { id, name, emoji, mets }
+  customFoods: [],     // { id, name, emoji, kcal }
+  // 💧 水分（{ date, count }）
+  waters: [],
+  // ⚖️ 体重ログ（{ id, date, kg, memo, ts }）
+  weights: [],
+  // 🔮 今日のおみくじキャッシュ
+  omikuji: { date: "", typeId: "", minutes: 0, message: "" },
+  // ⏰ 朝・夜コールの最終発火日
+  callRun: { lastMorningYmd: "", lastNightYmd: "" },
 };
 
 let state = loadState();
@@ -46,8 +84,20 @@ function normalizeState(parsed) {
     profile: { ...DEFAULT_STATE.profile, ...pp,
       nudge: { ...DEFAULT_STATE.profile.nudge, ...(pp.nudge || {}) },
       alarm: { ...DEFAULT_STATE.profile.alarm, ...(pp.alarm || {}) },
-      voice: { ...DEFAULT_STATE.profile.voice, ...(pp.voice || {}) } },
+      voice: { ...DEFAULT_STATE.profile.voice, ...(pp.voice || {}) },
+      morningCall: { ...DEFAULT_STATE.profile.morningCall, ...(pp.morningCall || {}) },
+      nightCall: { ...DEFAULT_STATE.profile.nightCall, ...(pp.nightCall || {}) },
+    },
     alarmRun: { ...DEFAULT_STATE.alarmRun, ...(parsed.alarmRun || {}) },
+    feedback: Array.isArray(parsed.feedback) ? parsed.feedback : [],
+    favoriteExercises: Array.isArray(parsed.favoriteExercises) ? parsed.favoriteExercises : [],
+    favoriteFoods: Array.isArray(parsed.favoriteFoods) ? parsed.favoriteFoods : [],
+    customExercises: Array.isArray(parsed.customExercises) ? parsed.customExercises : [],
+    customFoods: Array.isArray(parsed.customFoods) ? parsed.customFoods : [],
+    waters: Array.isArray(parsed.waters) ? parsed.waters : [],
+    weights: Array.isArray(parsed.weights) ? parsed.weights : [],
+    omikuji: { ...DEFAULT_STATE.omikuji, ...(parsed.omikuji || {}) },
+    callRun: { ...DEFAULT_STATE.callRun, ...(parsed.callRun || {}) },
   };
 }
 function loadState() {
@@ -62,6 +112,23 @@ function loadState() {
 function save() {
   try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); return true; }
   catch { return false; } // 容量オーバー（写真の入れすぎ等）
+}
+
+/* ---------- テーマ適用（auto / light / dark） ---------- */
+function applyTheme() {
+  const t = (state.profile && state.profile.theme) || "auto";
+  document.documentElement.setAttribute("data-theme", t);
+  // theme-color メタタグも追従
+  const isDark = t === "dark"
+    || (t === "auto" && window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute("content", isDark ? "#131722" : "#4ECDC4");
+}
+// システムテーマ変更を auto モード時だけ反映
+if (window.matchMedia) {
+  try { window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+    if ((state.profile && state.profile.theme) === "auto") applyTheme();
+  }); } catch {}
 }
 
 /* ---------- 日付ユーティリティ ---------- */
@@ -119,9 +186,141 @@ function bestStreak() {
   return best;
 }
 
+/* ---------- 🏅 称号・レベル ---------- */
+const LEVELS = [
+  { id: "egg",      name: "たまご",         emoji: "🥚", color: "#a8a29e", min: 0,   next: 1 },
+  { id: "rookie",   name: "ルーキー",       emoji: "🌱", color: "#10b981", min: 1,   next: 7 },
+  { id: "bronze",   name: "ブロンズ",       emoji: "🥉", color: "#d97706", min: 7,   next: 14 },
+  { id: "silver",   name: "シルバー",       emoji: "🥈", color: "#94a3b8", min: 14,  next: 30 },
+  { id: "gold",     name: "ゴールド",       emoji: "🥇", color: "#f4c13a", min: 30,  next: 100 },
+  { id: "platinum", name: "プラチナ",       emoji: "🏆", color: "#7dd3fc", min: 100, next: 365 },
+  { id: "diamond",  name: "ダイヤモンド",   emoji: "💎", color: "#a78bfa", min: 365, next: null },
+];
+function levelFor(achievedCount) {
+  let lv = LEVELS[0];
+  for (const l of LEVELS) if (achievedCount >= l.min) lv = l;
+  return lv;
+}
+function unlockedSkins() {
+  const c = achievedDates().size;
+  const out = ["default"];
+  if (c >= 1) out.push("bow");
+  if (c >= 7) out.push("cap");
+  if (c >= 30) out.push("crown");
+  if (c >= 60) out.push("santa");
+  return out;
+}
+
+/* ---------- 💧 水分 ---------- */
+function waterCountOn(dateStr) {
+  const w = state.waters.find((x) => x.date === dateStr);
+  return w ? w.count : 0;
+}
+function addWater(delta) {
+  const today = ymd();
+  let w = state.waters.find((x) => x.date === today);
+  if (!w) { w = { date: today, count: 0 }; state.waters.push(w); }
+  w.count = Math.max(0, w.count + delta);
+  save();
+}
+
+/* ---------- ⚖️ 体重 ---------- */
+function latestWeight() {
+  if (!state.weights.length) return null;
+  return state.weights.slice().sort((a, b) => (a.ts || 0) - (b.ts || 0))[state.weights.length - 1];
+}
+function weightTrendData(days) {
+  // 直近daysに該当する重量データを返す（日付昇順）
+  const cutoff = Date.now() - days * 86400000;
+  return state.weights
+    .filter((w) => (w.ts || 0) >= cutoff)
+    .slice()
+    .sort((a, b) => (a.ts || 0) - (b.ts || 0));
+}
+
+/* ---------- 🔮 おみくじ ---------- */
+function todaysOmikuji() {
+  const today = ymd();
+  if (state.omikuji && state.omikuji.date === today && state.omikuji.typeId) return state.omikuji;
+  const all = allExercises();
+  if (!all.length) return null;
+  const pick = all[Math.floor(Math.random() * all.length)];
+  const mins = [10, 15, 20, 30, 45][Math.floor(Math.random() * 5)];
+  const messages = [
+    "今日はこれをやってみよう！",
+    "気分転換にどう？",
+    "サクッとやって達成感ゲット！",
+    "ちょっと汗かいてみよう✨",
+    "あるるんからの提案だよ🍀",
+    "5分だけでも体は喜ぶよ！",
+  ];
+  state.omikuji = {
+    date: today,
+    typeId: pick.id,
+    minutes: mins,
+    message: messages[Math.floor(Math.random() * messages.length)],
+  };
+  save();
+  return state.omikuji;
+}
+function rerollOmikuji() { state.omikuji = { date: "", typeId: "", minutes: 0, message: "" }; save(); }
+
+/* ---------- 📱 iOS Safari 判定 ---------- */
+function isStandalone() {
+  return (("standalone" in window.navigator) && window.navigator.standalone)
+    || (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
+}
+function isIosSafari() {
+  const ua = navigator.userAgent || "";
+  return /iPhone|iPad|iPod/i.test(ua)
+    && /Safari/i.test(ua)
+    && !/CriOS|FxiOS|EdgiOS/i.test(ua);
+}
+
 /* ---------- ゆるキャラ「あるるん」SVG ---------- */
+const SKINS = [
+  { id: "default", name: "ノーマル", emoji: "🌱", needMin: 0,  desc: "あるるんのいつもの姿" },
+  { id: "bow",     name: "リボン",   emoji: "🎀", needMin: 1,  desc: "達成1日でアンロック" },
+  { id: "cap",     name: "キャップ", emoji: "🧢", needMin: 7,  desc: "達成7日でアンロック" },
+  { id: "crown",   name: "おうかん", emoji: "👑", needMin: 30, desc: "達成30日でアンロック" },
+  { id: "santa",   name: "サンタ",   emoji: "🎅", needMin: 60, desc: "達成60日でアンロック" },
+];
+function mascotSkinSVG(skin) {
+  switch (skin) {
+    case "bow":
+      return `<g class="skin-bow">
+        <path d="M50 22 q-12 -8 -2 -14 q8 -4 14 8 q-6 12 -12 6 z" fill="#ff8fab" stroke="#ff6b6b" stroke-width="1.5"/>
+        <path d="M70 22 q12 -8 2 -14 q-8 -4 -14 8 q6 12 12 6 z" fill="#ff8fab" stroke="#ff6b6b" stroke-width="1.5"/>
+        <circle cx="60" cy="22" r="4.5" fill="#ff6b6b"/>
+      </g>`;
+    case "cap":
+      return `<g class="skin-cap">
+        <path d="M26 30 q14 -22 36 -16 q14 4 24 14 q-2 6 -10 4 q-22 -10 -50 -2 z" fill="#4ecdc4" stroke="#38b2a8" stroke-width="1.2"/>
+        <path d="M76 28 q14 0 18 8 q-4 2 -14 -2 z" fill="#38b2a8"/>
+        <circle cx="60" cy="22" r="3" fill="#fff"/>
+      </g>`;
+    case "crown":
+      return `<g class="skin-crown">
+        <path d="M36 26 l4 -16 l8 10 l12 -14 l12 14 l8 -10 l4 16 z" fill="#ffd166" stroke="#caa12a" stroke-width="1.5" stroke-linejoin="round"/>
+        <rect x="36" y="24" width="48" height="6" rx="2" fill="#f4c13a"/>
+        <circle cx="44" cy="14" r="2" fill="#ff6b6b"/>
+        <circle cx="60" cy="8"  r="2.5" fill="#4ecdc4"/>
+        <circle cx="76" cy="14" r="2" fill="#a78bfa"/>
+      </g>`;
+    case "santa":
+      return `<g class="skin-santa">
+        <path d="M30 30 q16 -24 38 -16 q14 4 22 14 q-32 -8 -60 2 z" fill="#ff6b6b" stroke="#c43838" stroke-width="1.2"/>
+        <ellipse cx="60" cy="32" rx="26" ry="3.5" fill="#fff"/>
+        <circle cx="86" cy="14" r="5" fill="#fff"/>
+      </g>`;
+    default:
+      return "";
+  }
+}
 // mood: sleepy / cheer / happy / proud / worried
-function mascotSVG(mood) {
+function mascotSVG(mood, opts) {
+  opts = opts || {};
+  const skin = opts.skin || (state.profile && state.profile.mascotSkin) || "default";
   const face = {
     sleepy: `<path d="M44 60 q6 4 12 0" stroke="#2d3142" stroke-width="3" fill="none" stroke-linecap="round"/>
              <path d="M64 60 q6 4 12 0" stroke="#2d3142" stroke-width="3" fill="none" stroke-linecap="round"/>
@@ -151,6 +350,7 @@ function mascotSVG(mood) {
     <ellipse cx="60" cy="64" rx="40" ry="38" fill="#a8e6df"/>
     <ellipse cx="60" cy="66" rx="34" ry="32" fill="#c9f2ed"/>
     ${face}
+    ${mascotSkinSVG(skin)}
   </svg>`;
 }
 
@@ -168,8 +368,56 @@ function ringSVG(pct) {
 
 /* ---------- 画面ルーティング ---------- */
 let currentTab = "home";
+let previousTab = "home"; // ヘルプから戻るとき用
 let formDraft = { typeId: "run", minutes: 20, memo: "" };
 let calMonth = null; // {y, m}
+let selectedDate = ymd(); // 運動・食事タブの表示・記録対象日
+let editingLogId = null;
+let editingLogDraft = null;
+let editingFoodId = null;
+let editingFoodDraft = null;
+let showGallery = false;
+
+/* ---------- 日付セレクタUI（運動/食事タブで共有） ---------- */
+function dateLabel(d) {
+  if (d === ymd()) return "今日";
+  if (d === addDays(ymd(), -1)) return "昨日";
+  if (d === addDays(ymd(), -2)) return "一昨日";
+  const dd = new Date(d + "T00:00:00");
+  const dow = ["日","月","火","水","木","金","土"][dd.getDay()];
+  return `${dd.getMonth()+1}/${dd.getDate()}（${dow}）`;
+}
+function renderDateBar() {
+  const today = ymd();
+  const canNext = selectedDate < today;
+  return `
+    <div class="date-bar card">
+      <button class="date-nav" data-dnav="-1" aria-label="前の日">‹</button>
+      <div class="date-mid">
+        <input type="date" id="dateInput" value="${selectedDate}" max="${today}" />
+        <div class="date-lbl">${dateLabel(selectedDate)}</div>
+      </div>
+      <button class="date-nav" data-dnav="1" aria-label="次の日"${canNext ? "" : " disabled"}>›</button>
+      ${selectedDate !== today ? `<button class="date-today" id="dateToday">今日へ</button>` : ""}
+    </div>
+  `;
+}
+function bindDateBar() {
+  const inp = document.getElementById("dateInput");
+  if (inp) inp.onchange = () => {
+    const v = inp.value;
+    if (v && v <= ymd()) { selectedDate = v; render(); }
+  };
+  view.querySelectorAll("[data-dnav]").forEach((b) => {
+    b.onclick = () => {
+      const d = parseInt(b.dataset.dnav, 10);
+      const next = addDays(selectedDate, d);
+      if (next <= ymd()) { selectedDate = next; render(); }
+    };
+  });
+  const today = document.getElementById("dateToday");
+  if (today) today.onclick = () => { selectedDate = ymd(); render(); };
+}
 
 const view = document.getElementById("view");
 
@@ -182,17 +430,22 @@ function render() {
   const chip = document.getElementById("streakChip");
   chip.hidden = streak < 1;
   document.getElementById("streakChipNum").textContent = streak;
+  const helpBtn = document.getElementById("helpBtn");
+  if (helpBtn) helpBtn.hidden = false;
 
   if (currentTab === "home") renderHome();
   else if (currentTab === "log") renderLog();
   else if (currentTab === "food") renderFood();
   else if (currentTab === "stamps") renderStamps();
   else if (currentTab === "settings") renderSettings();
+  else if (currentTab === "help") renderHelp();
 }
 
 /* ===== Onboarding ===== */
 function renderOnboarding() {
   document.getElementById("tabbar").style.visibility = "hidden";
+  const helpBtn = document.getElementById("helpBtn");
+  if (helpBtn) helpBtn.hidden = true;
   view.innerHTML = `
     <div class="onb">
       ${mascotSVG("cheer")}
@@ -249,9 +502,30 @@ function renderHome() {
   const mins = minutesOn(ymd());
   const pct = goal ? kcal / goal : 0;
   const todayLogs = state.logs.filter((l) => l.date === ymd());
+  const ach = achievedDates();
+  const lv = levelFor(ach.size);
+  const nextNeeded = lv.next ? lv.next - ach.size : 0;
+  const waterCount = waterCountOn(ymd());
+  const waterGoal = state.profile.waterGoal || 8;
+  const omikuji = todaysOmikuji();
+  const ex = omikuji ? exById(omikuji.typeId) : null;
+  const showIosBanner = isIosSafari() && !isStandalone() && !state.profile.iosBannerDismissed;
+  const wt = latestWeight();
 
   view.innerHTML = `
+    ${showIosBanner ? `
+    <div class="card ios-banner">
+      <div class="ib-head"><span>📱</span> ホーム画面に追加すると便利！</div>
+      <div class="ib-body">
+        Safari下の <b>共有ボタン <span class="ib-icon">⬆️</span></b> → <b>「ホーム画面に追加」</b> でアプリのように使えます。
+      </div>
+      <button class="btn btn-ghost btn-sm" id="iosDismiss">わかった</button>
+    </div>` : ""}
+
     <div class="hero">
+      <div class="level-badge" style="background:${lv.color}22;color:${lv.color}">
+        ${lv.emoji} ${lv.name}${nextNeeded > 0 ? ` <span class="lv-next">あと${nextNeeded}日で次へ</span>` : ""}
+      </div>
       <div class="mascot-stage" id="mascotStage">${mascotSVG(moodForPct(pct))}</div>
       <div class="speech">${speechFor(pct, kcal, goal)}</div>
       <div class="mascot-name">あるるん</div>
@@ -269,46 +543,143 @@ function renderHome() {
         <div class="ring-stats">
           <div class="row"><div class="big">${mins}<span style="font-size:13px"> 分</span></div><div class="lbl">今日の運動時間</div></div>
           <div class="row"><div class="big">${todayLogs.length}<span style="font-size:13px"> 回</span></div><div class="lbl">今日の記録</div></div>
-          <div class="row"><div class="big" style="color:${pct>=1?'#4ecdc4':'#ff6b6b'}">${Math.round(pct*100)}<span style="font-size:13px"> %</span></div><div class="lbl">目標達成率</div></div>
+          <div class="row"><div class="big" style="color:${pct>=1?'var(--mint)':'var(--coral)'}">${Math.round(pct*100)}<span style="font-size:13px"> %</span></div><div class="lbl">目標達成率</div></div>
         </div>
       </div>
+    </div>
+
+    ${ex ? `
+    <div class="card omikuji-card">
+      <h3 class="card-title">🔮 今日のあるるんおみくじ</h3>
+      <div class="omk-main">
+        <div class="omk-emoji">${ex.emoji}</div>
+        <div class="omk-body">
+          <div class="omk-name">${escapeHtml(ex.name)} ${omikuji.minutes}分</div>
+          <div class="omk-msg">${escapeHtml(omikuji.message)}</div>
+        </div>
+      </div>
+      <div class="row-2" style="margin-top:12px">
+        <button class="btn btn-primary btn-sm" id="omkGo">これをやる！</button>
+        <button class="btn btn-ghost btn-sm" id="omkReroll">🎲 引き直す</button>
+      </div>
+    </div>` : ""}
+
+    <div class="card">
+      <h3 class="card-title">💧 水分（今日 ${waterCount}/${waterGoal}杯）</h3>
+      <div class="water-row">
+        ${Array.from({length: Math.max(waterGoal, waterCount)}, (_, i) => `
+          <button class="water-cup ${i < waterCount ? "filled" : ""}" data-wateri="${i}" aria-label="${i+1}杯目">${i < waterCount ? "💧" : "🥛"}</button>
+        `).join("")}
+      </div>
+      <div class="row-2" style="margin-top:10px">
+        <button class="btn btn-ghost btn-sm" id="waterPlus">＋1杯</button>
+        <button class="btn btn-ghost btn-sm" id="waterMinus" ${waterCount === 0 ? "disabled" : ""}>−1杯</button>
+      </div>
+      ${waterCount >= waterGoal ? `<div class="trend-summary" style="margin-top:10px">🎉 今日の水分目標たっせい！</div>` : ""}
+    </div>
+
+    <div class="card weight-quick">
+      <h3 class="card-title">⚖️ 体重チェック</h3>
+      ${wt ? `
+        <div class="balance">
+          <div><div class="v">${wt.kg}<span style="font-size:12px"> kg</span></div><div class="l">最新（${wt.date}）</div></div>
+          <div><div class="v">${state.weights.length}<span style="font-size:12px"> 回</span></div><div class="l">記録回数</div></div>
+        </div>` : `<div class="empty" style="padding:6px 0">まだ体重が登録されていません。下から記録できます。</div>`}
+      <div class="row-2" style="margin-top:10px">
+        <input type="number" id="hWkg" inputmode="decimal" placeholder="今日の体重 kg" step="0.1" />
+        <button class="btn btn-primary btn-sm" id="hWadd">記録する</button>
+      </div>
+      <button class="btn btn-ghost btn-sm" id="hWmore" style="margin-top:8px">📈 体重の推移を見る</button>
     </div>
 
     <div class="card">
       <h3 class="card-title">⚡ クイック記録</h3>
       <div class="quick-grid">
-        ${EXERCISES.map((e) => `
+        ${sortedExercises().slice(0, 8).map((e) => `
           <button class="quick-chip" data-quick="${e.id}">
-            <span class="e">${e.emoji}</span><span class="n">${e.name}</span>
+            <span class="e">${e.emoji}</span><span class="n">${escapeHtml(e.name)}</span>
           </button>`).join("")}
       </div>
       <div class="hint" style="font-size:11px;color:var(--ink-soft);margin-top:10px;font-weight:600">
         タップ → 時間を選ぶだけでサッと記録できるよ
       </div>
+    </div>
+
+    <div class="card help-cta-card" id="helpCta">
+      <div class="help-cta-row">
+        <div class="help-cta-emoji">📖</div>
+        <div class="help-cta-text">
+          <div class="help-cta-title">使い方・ヘルプ・ご意見</div>
+          <div class="help-cta-sub">操作がわからない時／要望を送りたい時はここから</div>
+        </div>
+        <div class="help-cta-arrow">›</div>
+      </div>
     </div>`;
 
   view.querySelectorAll("[data-quick]").forEach((b) => {
-    b.onclick = () => { formDraft = { typeId: b.dataset.quick, minutes: 20, memo: "" }; currentTab = "log"; render(); };
+    b.onclick = () => { formDraft = { typeId: b.dataset.quick, minutes: 20, memo: "" }; selectedDate = ymd(); currentTab = "log"; render(); };
   });
+  view.querySelectorAll("[data-wateri]").forEach((b) => {
+    b.onclick = () => {
+      const i = parseInt(b.dataset.wateri, 10);
+      // 押した位置までを満たす（同じ位置押せば1個減る）
+      const cur = waterCountOn(ymd());
+      const target = i + 1 === cur ? i : i + 1;
+      addWater(target - cur);
+      render();
+      if (target >= waterGoal && cur < waterGoal) {
+        toast("💧 水分目標たっせい！", "mint");
+        playPraiseJingle();
+      }
+    };
+  });
+  const wp = document.getElementById("waterPlus");
+  if (wp) wp.onclick = () => { addWater(1); render(); };
+  const wm = document.getElementById("waterMinus");
+  if (wm) wm.onclick = () => { addWater(-1); render(); };
+  const hWadd = document.getElementById("hWadd");
+  if (hWadd) hWadd.onclick = () => {
+    const kg = parseFloat(document.getElementById("hWkg").value);
+    if (!kg || kg < 20 || kg > 300) { toast("体重を正しく入れてね🙏", "coral"); return; }
+    state.weights.push({ id: uid(), date: ymd(), kg: Math.round(kg * 10) / 10, memo: "", ts: Date.now() });
+    state.profile.weightKg = kg; // 消費カロリー計算用も追従
+    save(); render();
+    toast(`⚖️ ${kg}kg 記録したよ`, "mint");
+  };
+  const hWmore = document.getElementById("hWmore");
+  if (hWmore) hWmore.onclick = () => { currentTab = "settings"; render(); setTimeout(() => { const el = document.getElementById("weightChartCard"); if (el) el.scrollIntoView({ behavior: "smooth", block: "center" }); }, 50); };
+  const omkGo = document.getElementById("omkGo");
+  if (omkGo && ex) omkGo.onclick = () => { formDraft = { typeId: ex.id, minutes: omikuji.minutes, memo: "" }; selectedDate = ymd(); currentTab = "log"; render(); };
+  const omkReroll = document.getElementById("omkReroll");
+  if (omkReroll) omkReroll.onclick = () => { rerollOmikuji(); render(); };
+  const iosDismiss = document.getElementById("iosDismiss");
+  if (iosDismiss) iosDismiss.onclick = () => { state.profile.iosBannerDismissed = true; save(); render(); };
+  const helpCta = document.getElementById("helpCta");
+  if (helpCta) helpCta.onclick = openHelp;
 }
 
 /* ===== Log (記録) ===== */
 function renderLog() {
   const w = state.profile.weightKg;
   const ex = exById(formDraft.typeId);
-  const kcal = calcKcal(ex.mets, w, formDraft.minutes);
-  const todayLogs = state.logs.filter((l) => l.date === ymd()).slice().reverse();
+  const exes = sortedExercises();
+  const fav = state.favoriteExercises;
+  const kcal = calcKcal(ex ? ex.mets : 5, w, formDraft.minutes);
+  const dayLogs = state.logs.filter((l) => l.date === selectedDate).slice().reverse();
   const minPresets = [10, 20, 30, 45, 60];
+  const isToday = selectedDate === ymd();
 
   view.innerHTML = `
+    ${renderDateBar()}
     <div class="card">
-      <h3 class="card-title">✏️ 運動を記録</h3>
+      <h3 class="card-title">✏️ ${isToday ? "今日" : dateLabel(selectedDate)}の運動を記録</h3>
       <div class="field">
-        <label>運動の種類</label>
+        <label>運動の種類 <span class="hint-inline">★でお気に入りに</span></label>
         <div class="type-grid">
-          ${EXERCISES.map((e) => `
+          ${exes.map((e) => `
             <button class="type-opt ${e.id === formDraft.typeId ? "active" : ""}" data-type="${e.id}">
-              <span class="e">${e.emoji}</span><span class="n">${e.name}</span>
+              <span class="fav-star ${fav.includes(e.id) ? "on" : ""}" data-favex="${e.id}" role="button" aria-label="お気に入り">${fav.includes(e.id) ? "★" : "☆"}</span>
+              <span class="e">${e.emoji}</span><span class="n">${escapeHtml(e.name)}</span>
             </button>`).join("")}
         </div>
       </div>
@@ -326,43 +697,69 @@ function renderLog() {
       </div>
       <div class="kcal-preview">
         <span class="num">${kcal}</span><span class="unit"> kcal</span>
-        <div class="sub">${ex.emoji} ${ex.name} ${formDraft.minutes}分の消費カロリー目安</div>
+        <div class="sub">${ex ? ex.emoji : "🏃"} ${ex ? ex.name : ""} ${formDraft.minutes}分の消費カロリー目安</div>
       </div>
       <button class="btn btn-primary" id="saveLog">この運動を記録する 💪</button>
     </div>
 
     <div class="card">
-      <h3 class="card-title">📋 今日の記録</h3>
-      ${todayLogs.length === 0
+      <h3 class="card-title">📋 ${isToday ? "今日" : dateLabel(selectedDate)}の記録</h3>
+      ${dayLogs.length === 0
         ? `<div class="empty"><span class="big">🌱</span>まだ記録がないよ。<br>軽い運動からはじめよう！</div>`
-        : todayLogs.map((l) => {
+        : dayLogs.map((l) => {
             const e = exById(l.typeId);
+            if (editingLogId === l.id && editingLogDraft) {
+              return `<div class="log-item editing">
+                <div class="log-emoji">${e ? e.emoji : "🏃"}</div>
+                <div class="log-edit-body">
+                  <label class="mini-lbl">時間（分）</label>
+                  <input type="number" id="elMin" value="${editingLogDraft.minutes}" inputmode="numeric" min="1" max="600" />
+                  <label class="mini-lbl">メモ</label>
+                  <input type="text" id="elMemo" value="${escapeHtml(editingLogDraft.memo)}" placeholder="メモ" />
+                  <div class="log-edit-actions">
+                    <button class="btn btn-primary btn-sm" data-elsave="${l.id}">保存</button>
+                    <button class="btn btn-ghost btn-sm" data-elcancel="${l.id}">キャンセル</button>
+                  </div>
+                </div>
+              </div>`;
+            }
             return `<div class="log-item">
               <div class="log-emoji">${e ? e.emoji : "🏃"}</div>
               <div class="log-main">
-                <div class="t">${e ? e.name : "運動"}</div>
+                <div class="t">${e ? escapeHtml(e.name) : "運動"}</div>
                 <div class="s">${l.minutes}分${l.memo ? ` ・ 📝 ${escapeHtml(l.memo)}` : ""}</div>
               </div>
               <div class="log-kcal">${l.kcal} kcal</div>
+              <button class="log-edit" data-edit="${l.id}" aria-label="編集">✏️</button>
               <button class="log-del" data-del="${l.id}" aria-label="削除">✕</button>
             </div>`;
           }).join("")}
     </div>`;
 
+  bindDateBar();
   view.querySelectorAll("[data-type]").forEach((b) => {
-    b.onclick = () => { formDraft.typeId = b.dataset.type; render(); };
+    b.onclick = (ev) => {
+      if (ev.target && ev.target.dataset && ev.target.dataset.favex) return;
+      formDraft.typeId = b.dataset.type; render();
+    };
+  });
+  view.querySelectorAll("[data-favex]").forEach((b) => {
+    b.onclick = (ev) => {
+      ev.stopPropagation();
+      toggleFavExercise(b.dataset.favex);
+      render();
+    };
   });
   view.querySelectorAll("[data-min]").forEach((b) => {
     b.onclick = () => { formDraft.minutes = parseInt(b.dataset.min, 10); render(); };
   });
   const minInput = document.getElementById("minInput");
-  minInput.oninput = () => {
+  if (minInput) minInput.oninput = () => {
     const v = parseInt(minInput.value, 10);
     formDraft.minutes = isNaN(v) ? 0 : v;
-    // カロリープレビューだけ更新（フォーカスを失わないよう全再描画しない）
     const ex2 = exById(formDraft.typeId);
-    view.querySelector(".kcal-preview .num").textContent = calcKcal(ex2.mets, w, formDraft.minutes);
-    view.querySelector(".kcal-preview .sub").textContent = `${ex2.emoji} ${ex2.name} ${formDraft.minutes}分の消費カロリー目安`;
+    view.querySelector(".kcal-preview .num").textContent = calcKcal(ex2 ? ex2.mets : 5, w, formDraft.minutes);
+    view.querySelector(".kcal-preview .sub").textContent = `${ex2 ? ex2.emoji : "🏃"} ${ex2 ? ex2.name : ""} ${formDraft.minutes}分の消費カロリー目安`;
     view.querySelectorAll(".min-chip").forEach((c) => c.classList.toggle("active", parseInt(c.dataset.min,10) === formDraft.minutes));
   };
   const memoInput = document.getElementById("memoInput");
@@ -371,25 +768,76 @@ function renderLog() {
   view.querySelectorAll("[data-del]").forEach((b) => {
     b.onclick = () => { state.logs = state.logs.filter((l) => l.id !== b.dataset.del); save(); render(); };
   });
+  view.querySelectorAll("[data-edit]").forEach((b) => {
+    b.onclick = () => {
+      const l = state.logs.find((x) => x.id === b.dataset.edit);
+      if (!l) return;
+      editingLogId = l.id;
+      editingLogDraft = { minutes: l.minutes, memo: l.memo || "" };
+      render();
+    };
+  });
+  view.querySelectorAll("[data-elsave]").forEach((b) => {
+    b.onclick = () => {
+      const l = state.logs.find((x) => x.id === b.dataset.elsave);
+      if (!l) return;
+      const m = parseInt(document.getElementById("elMin").value, 10);
+      if (!m || m < 1) { toast("時間を入れてね⏱️", "coral"); return; }
+      const e = exById(l.typeId);
+      l.minutes = m;
+      l.kcal = calcKcal(e ? e.mets : 5, state.profile.weightKg, m);
+      l.memo = (document.getElementById("elMemo").value || "").trim();
+      editingLogId = null; editingLogDraft = null;
+      save(); render();
+      toast("更新したよ✏️", "mint");
+    };
+  });
+  view.querySelectorAll("[data-elcancel]").forEach((b) => {
+    b.onclick = () => { editingLogId = null; editingLogDraft = null; render(); };
+  });
+}
+
+function toggleFavExercise(id) {
+  const i = state.favoriteExercises.indexOf(id);
+  if (i >= 0) state.favoriteExercises.splice(i, 1);
+  else state.favoriteExercises.unshift(id);
+  save();
+}
+function toggleFavFood(name) {
+  const i = state.favoriteFoods.indexOf(name);
+  if (i >= 0) state.favoriteFoods.splice(i, 1);
+  else state.favoriteFoods.unshift(name);
+  save();
 }
 
 function saveLog() {
   const ex = exById(formDraft.typeId);
+  if (!ex) { toast("運動を選んでね🙏", "coral"); return; }
   const mins = formDraft.minutes;
   if (!mins || mins < 1) { toast("運動時間を入れてね⏱️", "coral"); return; }
-  const wasAchieved = isAchieved(ymd());
+  const targetDate = selectedDate;
+  const wasAchieved = isAchieved(targetDate);
   const kcal = calcKcal(ex.mets, state.profile.weightKg, mins);
-  state.logs.push({ id: uid(), date: ymd(), typeId: ex.id, minutes: mins, kcal, memo: (formDraft.memo || "").trim(), ts: Date.now() });
+  state.logs.push({ id: uid(), date: targetDate, typeId: ex.id, minutes: mins, kcal, memo: (formDraft.memo || "").trim(), ts: Date.now() });
   formDraft.memo = "";
   save();
-  const nowAchieved = isAchieved(ymd());
+  const nowAchieved = isAchieved(targetDate);
   if (!wasAchieved && nowAchieved) {
-    currentTab = "home"; render();
-    setTimeout(() => celebrate(), 120);
+    if (targetDate === ymd()) {
+      currentTab = "home"; render();
+      setTimeout(() => celebrate(), 120);
+    } else {
+      toast(`🏆 ${dateLabel(targetDate)} のスタンプGET！`, "mint");
+      render();
+    }
   } else {
     toast(`${ex.emoji} ${kcal}kcal 記録したよ！`, "mint");
-    currentTab = "home"; render();
-    setTimeout(bounceMascot, 100);
+    if (targetDate === ymd()) {
+      currentTab = "home"; render();
+      setTimeout(bounceMascot, 100);
+    } else {
+      render();
+    }
   }
 }
 
@@ -484,11 +932,29 @@ function renderStamps() {
   }
   const monthAchieved = [...done].filter((d) => d.startsWith(`${y}-${String(m+1).padStart(2,"0")}`)).length;
 
+  // 月次サマリー（表示中の月）
+  const sum = monthlySummary(y, m);
+  const topEx = sum.topType ? exById(sum.topType) : null;
+  const lv = levelFor(done.size);
+
   view.innerHTML = `
     <div class="card streak-hero">
       <div class="num">${streak}<span class="unit">日</span></div>
       <div class="lbl">🔥 連続達成中！</div>
       ${best > 0 ? `<div class="streak-best">自己ベスト ${best}日連続</div>` : ""}
+      <div class="level-badge" style="background:${lv.color}22;color:${lv.color};margin-top:12px">
+        ${lv.emoji} ${lv.name}（累計 ${done.size}日）
+      </div>
+    </div>
+
+    <div class="card celebrate-card">
+      <h3 class="card-title">🎁 達成カードをシェア</h3>
+      <div class="note" style="margin-bottom:12px">いまのがんばりを1枚絵にして友だちにシェアできるよ📸</div>
+      <div class="row-2">
+        <button class="btn btn-primary btn-sm" id="cardShare">📤 シェア / 保存</button>
+        <button class="btn btn-ghost btn-sm" id="cardPreview">🖼️ プレビュー</button>
+      </div>
+      <div id="cardPreviewBox" hidden style="margin-top:12px"></div>
     </div>
 
     <div class="card">
@@ -533,6 +999,23 @@ function renderStamps() {
         ${dows.map((d) => `<div class="cal-dow">${d}</div>`).join("")}
         ${cells}
       </div>
+    </div>
+
+    <div class="card">
+      <h3 class="card-title">📜 ${y}年 ${m+1}月 の成績表</h3>
+      <div class="balance" style="margin-bottom:10px">
+        <div><div class="v">${sum.achievedInMonth}<span style="font-size:12px">日</span></div><div class="l">達成日数</div></div>
+        <div><div class="v" style="color:var(--mint-dark)">${sum.burned}</div><div class="l">消費kcal</div></div>
+        <div><div class="v" style="color:var(--coral)">${sum.intake}</div><div class="l">摂取kcal</div></div>
+        <div><div class="v">${sum.intake - sum.burned >= 0 ? "+" : ""}${sum.intake - sum.burned}</div><div class="l">差し引き</div></div>
+      </div>
+      <div class="month-rows">
+        <div class="mr"><span>🏃 総運動時間</span><b>${sum.exerciseMins} 分</b></div>
+        ${topEx ? `<div class="mr"><span>🏅 一番やった運動</span><b>${topEx.emoji} ${escapeHtml(topEx.name)}（${sum.topMins}分）</b></div>` : ""}
+        <div class="mr"><span>✊ がまんできた回数</span><b>${sum.resisted} 回</b></div>
+        <div class="mr"><span>🍪 食べちゃった回数</span><b>${sum.ate} 回</b></div>
+      </div>
+      <div class="trend-summary" style="margin-top:12px">${sum.achievedInMonth === 0 ? `🌱 今月はこれから！1日でも達成すれば成績表に光るよ` : sum.achievedInMonth >= 20 ? `🌟 ${sum.achievedInMonth}日達成！MVP級のがんばり！` : `🎉 ${sum.achievedInMonth}日達成！すばらしい！`}</div>
     </div>`;
 
   document.getElementById("calPrev").onclick = () => {
@@ -544,6 +1027,127 @@ function renderStamps() {
   view.querySelectorAll("[data-trend]").forEach((b) => {
     b.onclick = () => { trendMode = b.dataset.trend; render(); };
   });
+  const cardShareBtn = document.getElementById("cardShare");
+  if (cardShareBtn) cardShareBtn.onclick = shareCelebrationCard;
+  const cardPreviewBtn = document.getElementById("cardPreview");
+  if (cardPreviewBtn) cardPreviewBtn.onclick = async () => {
+    const box = document.getElementById("cardPreviewBox");
+    if (!box) return;
+    box.innerHTML = `<div class="empty" style="padding:6px 0;font-size:12px">🎨 生成中...</div>`;
+    box.hidden = false;
+    try {
+      const dataUrl = await generateCelebrationCard();
+      box.innerHTML = `<img src="${dataUrl}" alt="達成カードのプレビュー" style="width:100%;border-radius:14px;display:block;box-shadow:var(--shadow-sm)"/>`;
+    } catch {
+      box.innerHTML = `<div class="empty" style="color:var(--coral)">カードを作れなかったよ🙏</div>`;
+    }
+  };
+}
+
+/* ---------- 📜 月別総まとめ ---------- */
+function monthlySummary(y, m) {
+  const prefix = `${y}-${String(m+1).padStart(2,"0")}-`;
+  const logs = state.logs.filter((l) => l.date.startsWith(prefix));
+  const foods = state.foods.filter((f) => f.date.startsWith(prefix));
+  const snacks = state.snacks.filter((s) => s.date.startsWith(prefix));
+  const burned = logs.reduce((s, l) => s + (l.kcal || 0), 0);
+  const intake = foods.reduce((s, f) => s + (f.kcal || 0), 0);
+  const exerciseMins = logs.reduce((s, l) => s + l.minutes, 0);
+  const achievedInMonth = [...achievedDates()].filter((d) => d.startsWith(prefix)).length;
+  const resisted = snacks.filter((s) => s.action === "resisted").length;
+  const ate = snacks.filter((s) => s.action === "ate").length;
+  const byType = {};
+  logs.forEach((l) => { byType[l.typeId] = (byType[l.typeId] || 0) + l.minutes; });
+  let topType = null, topMins = 0;
+  Object.entries(byType).forEach(([k, v]) => { if (v > topMins) { topType = k; topMins = v; } });
+  return { burned, intake, exerciseMins, achievedInMonth, resisted, ate, topType, topMins };
+}
+
+/* ---------- 🎁 お祝いカード生成 + シェア ---------- */
+async function generateCelebrationCard() {
+  const W = 1080, H = 1080;
+  const cnv = document.createElement("canvas");
+  cnv.width = W; cnv.height = H;
+  const ctx = cnv.getContext("2d");
+  // 背景グラデーション
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, "#fff9f0");
+  grad.addColorStop(0.65, "#e6faf7");
+  grad.addColorStop(1, "#a8e6df");
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+  // 紙吹雪
+  const dots = [
+    { x: 80,  y: 120, c: "#ff6b6b" }, { x: 980, y: 110, c: "#4ecdc4" },
+    { x: 140, y: 280, c: "#ffd166" }, { x: 920, y: 320, c: "#a78bfa" },
+    { x: 70,  y: 540, c: "#4ecdc4" }, { x: 1000,y: 600, c: "#ff8fab" },
+    { x: 60,  y: 880, c: "#ffd166" }, { x: 990, y: 900, c: "#a78bfa" },
+  ];
+  dots.forEach((d) => { ctx.fillStyle = d.c; ctx.beginPath(); ctx.arc(d.x, d.y, 14, 0, Math.PI*2); ctx.fill(); });
+  // タイトル
+  ctx.fillStyle = "#2d3142";
+  ctx.font = "bold 80px 'Hiragino Sans', 'Noto Sans JP', sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText("🌿 slimmate", W/2, 140);
+  // ストリーク巨大表示
+  const streak = currentStreak();
+  const total = achievedDates().size;
+  const lv = levelFor(total);
+  ctx.fillStyle = "#ff6b6b";
+  ctx.font = "bold 280px 'Hiragino Sans', 'Noto Sans JP', sans-serif";
+  ctx.fillText(String(streak), W/2, 460);
+  ctx.fillStyle = "#2d3142";
+  ctx.font = "bold 64px 'Hiragino Sans', 'Noto Sans JP', sans-serif";
+  ctx.fillText("日連続たっせい 🔥", W/2, 550);
+  // レベル
+  ctx.fillStyle = lv.color;
+  ctx.font = "bold 48px 'Hiragino Sans', 'Noto Sans JP', sans-serif";
+  ctx.fillText(`${lv.emoji} ${lv.name}  ・ 累計 ${total} スタンプ`, W/2, 640);
+  // マスコット（SVG→Image）
+  try {
+    const mImg = await svgToImage(mascotSVG("proud"));
+    const mw = 360, mh = 360;
+    ctx.drawImage(mImg, W/2 - mw/2, 690, mw, mh);
+  } catch {}
+  // フッター
+  ctx.fillStyle = "#6b7280";
+  ctx.font = "32px 'Hiragino Sans', 'Noto Sans JP', sans-serif";
+  ctx.fillText(`#slimmate ・ あるるんとがんばり中`, W/2, 1040);
+  return cnv.toDataURL("image/png");
+}
+function svgToImage(svgStr) {
+  return new Promise((resolve, reject) => {
+    const blob = new Blob([svgStr], { type: "image/svg+xml;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => { resolve(img); /* URL は描画後でも GC されるまで残るので即 revoke しない */ setTimeout(() => URL.revokeObjectURL(url), 1000); };
+    img.onerror = (e) => { URL.revokeObjectURL(url); reject(e); };
+    img.src = url;
+  });
+}
+async function shareCelebrationCard() {
+  let dataUrl;
+  try { dataUrl = await generateCelebrationCard(); }
+  catch { toast("カードを作れなかったよ🙏", "coral"); return; }
+  const filename = `slimmate-${ymd()}.png`;
+  try {
+    const blob = await (await fetch(dataUrl)).blob();
+    const file = new File([blob], filename, { type: "image/png" });
+    if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({
+        files: [file],
+        title: "slimmate",
+        text: `${currentStreak()}日連続たっせい！ あるるんとがんばってます🌱 #slimmate`,
+      });
+      toast("シェアしたよ🎉", "mint");
+      return;
+    }
+  } catch {}
+  // フォールバック：ダウンロード
+  const a = document.createElement("a");
+  a.href = dataUrl; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  toast("カードを保存したよ📥 SNSにアップしてね！", "mint");
 }
 
 /* ===== Food (食事記録) ===== */
@@ -565,6 +1169,20 @@ const FOODS_PRESET = [
   { name: "ジュース", kcal: 150, emoji: "🥤" },
   { name: "ビール", kcal: 140, emoji: "🍺" },
 ];
+// プリセット+カスタム（共通形式に揃える）
+function allFoods() {
+  const customs = (state && state.customFoods) ? state.customFoods : [];
+  return FOODS_PRESET.concat(customs);
+}
+// お気に入り優先で並び替え
+function sortedFoods() {
+  const favs = (state && state.favoriteFoods) ? state.favoriteFoods : [];
+  const all = allFoods();
+  const key = (f) => f.name;
+  const pinned = favs.map((k) => all.find((f) => key(f) === k)).filter(Boolean);
+  const rest = all.filter((f) => !favs.includes(key(f)));
+  return pinned.concat(rest);
+}
 let foodDraft = { name: "", kcal: "", memo: "", photo: null };
 
 function downscaleImage(file, maxDim = 640, quality = 0.72) {
@@ -590,13 +1208,21 @@ function foodsOn(dateStr) { return state.foods.filter((f) => f.date === dateStr)
 function intakeOn(dateStr) { return foodsOn(dateStr).reduce((s, f) => s + (f.kcal || 0), 0); }
 
 function renderFood() {
-  const todayFoods = foodsOn(ymd()).slice().reverse();
-  const intake = intakeOn(ymd());
-  const burned = kcalOn(ymd());
+  if (showGallery) return renderFoodGallery();
+  const dayFoods = foodsOn(selectedDate).slice().reverse();
+  const intake = intakeOn(selectedDate);
+  const burned = kcalOn(selectedDate);
+  const foods = sortedFoods();
+  const fav = state.favoriteFoods;
+  const isToday = selectedDate === ymd();
 
   view.innerHTML = `
+    ${renderDateBar()}
     <div class="card">
-      <h3 class="card-title">📷 写真でかんたん記録</h3>
+      <div class="cal-head">
+        <h3 class="card-title" style="margin:0">📷 写真でかんたん記録</h3>
+        <button class="btn btn-ghost btn-sm" id="openGalleryBtn">🖼️ ギャラリー</button>
+      </div>
       <input type="file" id="foodPhoto" accept="image/*" capture="environment" hidden />
       ${foodDraft.photo
         ? `<div class="photo-preview"><img src="${foodDraft.photo}" alt="食事の写真"/><button class="photo-remove" id="photoRemove" aria-label="写真を消す">✕</button></div>`
@@ -607,11 +1233,12 @@ function renderFood() {
     </div>
 
     <div class="card">
-      <h3 class="card-title">🍽️ 何を食べた？</h3>
+      <h3 class="card-title">🍽️ 何を食べた？ <span class="hint-inline">★でお気に入りに</span></h3>
       <div class="food-quick">
-        ${FOODS_PRESET.map((f, i) => `
-          <button class="food-chip" data-food="${i}">
-            <span class="e">${f.emoji}</span><span class="n">${f.name}</span><span class="k">${f.kcal}kcal</span>
+        ${foods.map((f) => `
+          <button class="food-chip" data-food="${escapeHtml(f.name)}">
+            <span class="fav-star ${fav.includes(f.name) ? "on" : ""}" data-favfood="${escapeHtml(f.name)}" role="button" aria-label="お気に入り">${fav.includes(f.name) ? "★" : "☆"}</span>
+            <span class="e">${f.emoji}</span><span class="n">${escapeHtml(f.name)}</span><span class="k">${f.kcal}kcal</span>
           </button>`).join("")}
       </div>
       <div class="divider"></div>
@@ -633,7 +1260,7 @@ function renderFood() {
     </div>
 
     <div class="card">
-      <h3 class="card-title">⚖️ 今日のバランス</h3>
+      <h3 class="card-title">⚖️ ${isToday ? "今日" : dateLabel(selectedDate)}のバランス</h3>
       <div class="balance">
         <div><div class="v" style="color:var(--coral)">${intake}</div><div class="l">摂取 kcal</div></div>
         <div><div class="v" style="color:var(--mint-dark)">${burned}</div><div class="l">運動 kcal</div></div>
@@ -642,20 +1269,43 @@ function renderFood() {
     </div>
 
     <div class="card">
-      <h3 class="card-title">📋 今日の食事</h3>
-      ${todayFoods.length === 0
+      <h3 class="card-title">📋 ${isToday ? "今日" : dateLabel(selectedDate)}の食事</h3>
+      ${dayFoods.length === 0
         ? `<div class="empty"><span class="big">🍽️</span>まだ記録がないよ。<br>写真やボタンでサクッと記録！</div>`
-        : todayFoods.map((f) => `
-          <div class="log-item">
+        : dayFoods.map((f) => {
+          if (editingFoodId === f.id && editingFoodDraft) {
+            return `<div class="log-item editing">
+              ${f.photo ? `<img class="food-thumb" src="${f.photo}" alt=""/>` : `<div class="log-emoji">🍽️</div>`}
+              <div class="log-edit-body">
+                <label class="mini-lbl">食べたもの</label>
+                <input type="text" id="efName" value="${escapeHtml(editingFoodDraft.name)}" />
+                <label class="mini-lbl">カロリー</label>
+                <input type="number" id="efKcal" value="${editingFoodDraft.kcal}" inputmode="numeric" />
+                <label class="mini-lbl">メモ</label>
+                <input type="text" id="efMemo" value="${escapeHtml(editingFoodDraft.memo)}" />
+                <div class="log-edit-actions">
+                  <button class="btn btn-primary btn-sm" data-efsave="${f.id}">保存</button>
+                  <button class="btn btn-ghost btn-sm" data-efcancel="${f.id}">キャンセル</button>
+                </div>
+              </div>
+            </div>`;
+          }
+          return `<div class="log-item">
             ${f.photo ? `<img class="food-thumb" src="${f.photo}" alt=""/>` : `<div class="log-emoji">🍽️</div>`}
             <div class="log-main">
               <div class="t">${escapeHtml(f.name)}</div>
               <div class="s">${f.memo ? `📝 ${escapeHtml(f.memo)}` : "&nbsp;"}</div>
             </div>
             <div class="log-kcal" style="color:var(--coral)">${f.kcal || 0} kcal</div>
+            <button class="log-edit" data-editfood="${f.id}" aria-label="編集">✏️</button>
             <button class="log-del" data-delfood="${f.id}" aria-label="削除">✕</button>
-          </div>`).join("")}
+          </div>`;
+        }).join("")}
     </div>`;
+
+  bindDateBar();
+  const galBtn = document.getElementById("openGalleryBtn");
+  if (galBtn) galBtn.onclick = () => { showGallery = true; render(); };
 
   const photoBtn = document.getElementById("photoBtn");
   const photoInput = document.getElementById("foodPhoto");
@@ -672,9 +1322,19 @@ function renderFood() {
   if (photoRemove) photoRemove.onclick = () => { foodDraft.photo = null; render(); };
 
   view.querySelectorAll("[data-food]").forEach((b) => {
-    b.onclick = () => {
-      const f = FOODS_PRESET[parseInt(b.dataset.food, 10)];
+    b.onclick = (ev) => {
+      if (ev.target && ev.target.dataset && ev.target.dataset.favfood) return;
+      const name = b.dataset.food;
+      const f = allFoods().find((x) => x.name === name);
+      if (!f) return;
       foodDraft.name = f.name; foodDraft.kcal = f.kcal; render();
+    };
+  });
+  view.querySelectorAll("[data-favfood]").forEach((b) => {
+    b.onclick = (ev) => {
+      ev.stopPropagation();
+      toggleFavFood(b.dataset.favfood);
+      render();
     };
   });
   const fName = document.getElementById("foodName");
@@ -687,6 +1347,59 @@ function renderFood() {
   view.querySelectorAll("[data-delfood]").forEach((b) => {
     b.onclick = () => { state.foods = state.foods.filter((f) => f.id !== b.dataset.delfood); save(); render(); };
   });
+  view.querySelectorAll("[data-editfood]").forEach((b) => {
+    b.onclick = () => {
+      const f = state.foods.find((x) => x.id === b.dataset.editfood);
+      if (!f) return;
+      editingFoodId = f.id;
+      editingFoodDraft = { name: f.name, kcal: f.kcal || 0, memo: f.memo || "" };
+      render();
+    };
+  });
+  view.querySelectorAll("[data-efsave]").forEach((b) => {
+    b.onclick = () => {
+      const f = state.foods.find((x) => x.id === b.dataset.efsave);
+      if (!f) return;
+      const name = (document.getElementById("efName").value || "").trim();
+      const kcal = parseInt(document.getElementById("efKcal").value, 10);
+      if (!name) { toast("食べたものを入れてね🙏", "coral"); return; }
+      f.name = name;
+      f.kcal = isNaN(kcal) ? 0 : kcal;
+      f.memo = (document.getElementById("efMemo").value || "").trim();
+      editingFoodId = null; editingFoodDraft = null;
+      save(); render();
+      toast("更新したよ✏️", "mint");
+    };
+  });
+  view.querySelectorAll("[data-efcancel]").forEach((b) => {
+    b.onclick = () => { editingFoodId = null; editingFoodDraft = null; render(); };
+  });
+}
+
+/* ===== 食事写真ギャラリー ===== */
+function renderFoodGallery() {
+  const photos = state.foods.filter((f) => f.photo).slice().sort((a, b) => (b.ts || 0) - (a.ts || 0));
+  view.innerHTML = `
+    <div class="help-bar">
+      <button class="help-back" id="galBack">← 食事へ戻る</button>
+      <h2 class="help-title">🖼️ 食事ギャラリー</h2>
+    </div>
+    <div class="card">
+      ${photos.length === 0
+        ? `<div class="empty"><span class="big">📷</span>まだ写真がありません。<br>食事に写真をつけてみよう！</div>`
+        : `<div class="gallery-grid">
+            ${photos.map((f) => `
+              <div class="gallery-cell" data-galf="${f.id}">
+                <img src="${f.photo}" alt="${escapeHtml(f.name)}"/>
+                <div class="cap">
+                  <div class="cap-n">${escapeHtml(f.name)}</div>
+                  <div class="cap-d">${f.date} ・ ${f.kcal || 0}kcal</div>
+                </div>
+              </div>`).join("")}
+          </div>`}
+    </div>
+  `;
+  document.getElementById("galBack").onclick = () => { showGallery = false; render(); };
 }
 
 function saveFood() {
@@ -694,7 +1407,7 @@ function saveFood() {
   const kcal = parseInt(foodDraft.kcal, 10);
   if (!name && !foodDraft.photo) { toast("食べたものを入力するか写真を選んでね🙏", "coral"); return; }
   const entry = {
-    id: uid(), date: ymd(), name: name || "食事",
+    id: uid(), date: selectedDate, name: name || "食事",
     kcal: isNaN(kcal) ? 0 : kcal, memo: (foodDraft.memo || "").trim(),
     photo: foodDraft.photo || null, ts: Date.now(),
   };
@@ -713,6 +1426,17 @@ function saveFood() {
 function renderSettings() {
   const p = state.profile;
   view.innerHTML = `
+    <div class="card help-cta-card" id="helpCtaS">
+      <div class="help-cta-row">
+        <div class="help-cta-emoji">📖</div>
+        <div class="help-cta-text">
+          <div class="help-cta-title">使い方・ヘルプ・ご意見</div>
+          <div class="help-cta-sub">アプリの使い方やよくある質問、ご要望はこちらから</div>
+        </div>
+        <div class="help-cta-arrow">›</div>
+      </div>
+    </div>
+
     <div class="card">
       <h3 class="card-title">👤 プロフィール</h3>
       <div class="field">
@@ -792,7 +1516,7 @@ function renderSettings() {
       ${state.alarmRun.active
         ? `<button class="btn btn-sm" id="alStopBtn" style="width:100%;background:var(--coral);color:#fff">■ あるるんを停止する</button>`
         : `<button class="btn btn-primary btn-sm" id="alStartBtn" style="width:100%">▶ あるるんをスタート</button>`}
-      <button class="btn btn-ghost btn-sm" id="alEatBtn" style="width:100%;margin-top:8px">🍪 お菓子食べちゃった（もーーーーーーーーーー）</button>
+      <button class="btn btn-ghost btn-sm" id="alEatBtn" style="width:100%;margin-top:8px">🍪 お菓子食べちゃった（のーーーーーーーーーー）</button>
     </div>
 
     <div class="card">
@@ -808,6 +1532,132 @@ function renderSettings() {
       <div class="hint" style="font-size:11px;color:var(--ink-soft);margin-top:10px;font-weight:600;text-align:center">
         ボタンを押すだけでカウント。「食べちゃった」はあるるんも鳴らせるよ🔔
       </div>
+    </div>
+
+    <div class="card">
+      <h3 class="card-title">🎨 みためテーマ</h3>
+      <div class="seg help-seg" style="margin-bottom:0">
+        <button class="seg-btn ${p.theme==="auto"?"active":""}" data-theme="auto">🔄 自動</button>
+        <button class="seg-btn ${p.theme==="light"?"active":""}" data-theme="light">☀️ ライト</button>
+        <button class="seg-btn ${p.theme==="dark"?"active":""}" data-theme="dark">🌙 ダーク</button>
+      </div>
+      <div class="note" style="margin-top:10px">自動：端末の設定にあわせます。</div>
+    </div>
+
+    <div class="card">
+      <h3 class="card-title">🎀 マスコットの着せ替え</h3>
+      <div class="skin-grid">
+        ${SKINS.map((s) => {
+          const unlocked = unlockedSkins().includes(s.id);
+          const active = p.mascotSkin === s.id;
+          return `<button class="skin-opt ${active ? "active" : ""} ${unlocked ? "" : "locked"}" data-skin="${s.id}">
+            <span class="e">${s.emoji}</span>
+            <span class="n">${s.name}</span>
+            <span class="d">${unlocked ? s.desc : "🔒 " + s.desc}</span>
+          </button>`;
+        }).join("")}
+      </div>
+    </div>
+
+    <div class="card">
+      <h3 class="card-title">⏰ あるるんの朝・夜のコール</h3>
+      <div class="toggle-row">
+        <div><div class="lbl">🌞 モーニングコール</div><div class="sub">朝、起きたタイミングで今日の目標を声かけ</div></div>
+        <label class="switch"><input type="checkbox" id="mcOn" ${p.morningCall.enabled ? "checked" : ""}/><span class="slider"></span></label>
+      </div>
+      <div class="field" style="margin:8px 0 0" ${p.morningCall.enabled ? "" : 'hidden'}>
+        <label>時刻</label>
+        <input type="time" id="mcTime" value="${hhmm(p.morningCall.hour, p.morningCall.min)}" />
+      </div>
+      <div class="divider"></div>
+      <div class="toggle-row">
+        <div><div class="lbl">🌙 ナイトコール</div><div class="sub">夜、今日のがんばりを振り返って褒める</div></div>
+        <label class="switch"><input type="checkbox" id="ncOn" ${p.nightCall.enabled ? "checked" : ""}/><span class="slider"></span></label>
+      </div>
+      <div class="field" style="margin:8px 0 0" ${p.nightCall.enabled ? "" : 'hidden'}>
+        <label>時刻</label>
+        <input type="time" id="ncTime" value="${hhmm(p.nightCall.hour, p.nightCall.min)}" />
+      </div>
+    </div>
+
+    <div class="card">
+      <h3 class="card-title">🏷️ カスタム運動・食事を追加</h3>
+      <div class="note" style="margin-bottom:10px">よく使う運動や食べ物を自分で登録できます。</div>
+      <details class="faq-item">
+        <summary>🏃 オリジナル運動を追加</summary>
+        <div class="a" style="padding-bottom:10px">
+          <div class="row-2">
+            <input type="text" id="cexName" placeholder="例: ピラティス" />
+            <input type="text" id="cexEmoji" placeholder="🤸" maxlength="2" />
+          </div>
+          <div class="row-2" style="margin-top:8px">
+            <input type="number" id="cexMets" step="0.5" min="1" max="20" placeholder="METs (例: 5.0)" />
+            <button class="btn btn-primary btn-sm" id="cexAdd">＋ 追加</button>
+          </div>
+          <div class="hint" style="margin-top:6px">METsの目安：ウォーキング3.5 / ジョギング7 / 縄跳び10</div>
+          ${state.customExercises.length ? `
+            <div style="margin-top:10px">
+              ${state.customExercises.map((e) => `
+                <div class="custom-row">
+                  <span>${e.emoji} ${escapeHtml(e.name)} <small style="color:var(--ink-soft)">METs ${e.mets}</small></span>
+                  <button class="log-del" data-cexdel="${e.id}">✕</button>
+                </div>`).join("")}
+            </div>` : ""}
+        </div>
+      </details>
+      <details class="faq-item">
+        <summary>🍽️ オリジナル食べ物を追加</summary>
+        <div class="a" style="padding-bottom:10px">
+          <div class="row-2">
+            <input type="text" id="cfName" placeholder="例: 母のオムライス" />
+            <input type="text" id="cfEmoji" placeholder="🍳" maxlength="2" />
+          </div>
+          <div class="row-2" style="margin-top:8px">
+            <input type="number" id="cfKcal" inputmode="numeric" placeholder="kcal" />
+            <button class="btn btn-primary btn-sm" id="cfAdd">＋ 追加</button>
+          </div>
+          ${state.customFoods.length ? `
+            <div style="margin-top:10px">
+              ${state.customFoods.map((f) => `
+                <div class="custom-row">
+                  <span>${f.emoji} ${escapeHtml(f.name)} <small style="color:var(--ink-soft)">${f.kcal}kcal</small></span>
+                  <button class="log-del" data-cfdel="${f.id}">✕</button>
+                </div>`).join("")}
+            </div>` : ""}
+        </div>
+      </details>
+    </div>
+
+    <div class="card" id="weightChartCard">
+      <h3 class="card-title">📈 体重の推移</h3>
+      ${renderWeightChart(90)}
+      <div class="balance" style="margin-top:10px">
+        ${(() => {
+          const wt = latestWeight();
+          const first = state.weights.length ? state.weights[0] : null;
+          const diff = wt && first ? Math.round((wt.kg - first.kg) * 10) / 10 : null;
+          return `
+            <div><div class="v">${wt ? wt.kg : "—"}<span style="font-size:12px"> kg</span></div><div class="l">最新</div></div>
+            <div><div class="v">${first ? first.kg : "—"}<span style="font-size:12px"> kg</span></div><div class="l">開始時</div></div>
+            <div><div class="v" style="color:${diff===null?'var(--ink-soft)':(diff<=0?'var(--mint-dark)':'var(--coral)')}">${diff===null?"—":(diff>0?"+":"")+diff}<span style="font-size:12px"> kg</span></div><div class="l">変化</div></div>
+          `;
+        })()}
+      </div>
+      <div class="row-2" style="margin-top:12px">
+        <input type="number" id="wkg" inputmode="decimal" step="0.1" placeholder="今の体重 kg" />
+        <button class="btn btn-primary btn-sm" id="wAdd">記録する</button>
+      </div>
+      ${state.weights.length ? `
+      <details class="faq-item" style="margin-top:10px">
+        <summary>📜 履歴を見る（${state.weights.length}件）</summary>
+        <div class="a" style="padding-bottom:10px">
+          ${state.weights.slice().reverse().slice(0, 30).map((w) => `
+            <div class="custom-row">
+              <span>${w.date} — <b>${w.kg}kg</b>${w.memo ? ` ・ ${escapeHtml(w.memo)}` : ""}</span>
+              <button class="log-del" data-wdel="${w.id}">✕</button>
+            </div>`).join("")}
+        </div>
+      </details>` : ""}
     </div>
 
     <div class="card">
@@ -919,6 +1769,152 @@ function renderSettings() {
       state = structuredClone(DEFAULT_STATE); save(); currentTab = "home"; render();
     }
   };
+
+  const helpCtaS = document.getElementById("helpCtaS");
+  if (helpCtaS) helpCtaS.onclick = openHelp;
+
+  // 🎨 テーマ切替
+  view.querySelectorAll("[data-theme]").forEach((b) => {
+    b.onclick = () => { p.theme = b.dataset.theme; save(); applyTheme(); render(); };
+  });
+
+  // 🎀 マスコットスキン
+  view.querySelectorAll("[data-skin]").forEach((b) => {
+    b.onclick = () => {
+      const id = b.dataset.skin;
+      if (!unlockedSkins().includes(id)) {
+        const s = SKINS.find((x) => x.id === id);
+        toast(`まだロック中🔒 ${s ? s.desc : ""}`, "coral");
+        return;
+      }
+      p.mascotSkin = id; save(); render();
+    };
+  });
+
+  // ⏰ 朝・夜コール
+  const mcOn = document.getElementById("mcOn");
+  if (mcOn) mcOn.onchange = async () => {
+    p.morningCall.enabled = mcOn.checked;
+    if (mcOn.checked && "Notification" in window && Notification.permission === "default") {
+      await Notification.requestPermission();
+    }
+    save(); render();
+  };
+  const mcTime = document.getElementById("mcTime");
+  if (mcTime) mcTime.onchange = () => {
+    const [h, m] = mcTime.value.split(":").map((x) => parseInt(x, 10));
+    if (!isNaN(h)) p.morningCall.hour = h;
+    if (!isNaN(m)) p.morningCall.min = m;
+    save();
+  };
+  const ncOn = document.getElementById("ncOn");
+  if (ncOn) ncOn.onchange = async () => {
+    p.nightCall.enabled = ncOn.checked;
+    if (ncOn.checked && "Notification" in window && Notification.permission === "default") {
+      await Notification.requestPermission();
+    }
+    save(); render();
+  };
+  const ncTime = document.getElementById("ncTime");
+  if (ncTime) ncTime.onchange = () => {
+    const [h, m] = ncTime.value.split(":").map((x) => parseInt(x, 10));
+    if (!isNaN(h)) p.nightCall.hour = h;
+    if (!isNaN(m)) p.nightCall.min = m;
+    save();
+  };
+
+  // 🏷️ カスタム運動
+  const cexAdd = document.getElementById("cexAdd");
+  if (cexAdd) cexAdd.onclick = () => {
+    const name = (document.getElementById("cexName").value || "").trim();
+    const emoji = (document.getElementById("cexEmoji").value || "🏃").trim() || "🏃";
+    const mets = parseFloat(document.getElementById("cexMets").value);
+    if (!name) { toast("名前を入れてね🙏", "coral"); return; }
+    if (!mets || mets < 1 || mets > 20) { toast("METsは1〜20で入れてね🙏", "coral"); return; }
+    state.customExercises.push({ id: "cex_" + uid(), name, emoji, mets });
+    save(); render();
+    toast(`✅ ${emoji} ${name} を追加！`, "mint");
+  };
+  view.querySelectorAll("[data-cexdel]").forEach((b) => {
+    b.onclick = () => {
+      state.customExercises = state.customExercises.filter((e) => e.id !== b.dataset.cexdel);
+      // お気に入りからも除去
+      state.favoriteExercises = state.favoriteExercises.filter((id) => id !== b.dataset.cexdel);
+      save(); render();
+    };
+  });
+
+  // 🏷️ カスタム食事
+  const cfAdd = document.getElementById("cfAdd");
+  if (cfAdd) cfAdd.onclick = () => {
+    const name = (document.getElementById("cfName").value || "").trim();
+    const emoji = (document.getElementById("cfEmoji").value || "🍽️").trim() || "🍽️";
+    const kcal = parseInt(document.getElementById("cfKcal").value, 10);
+    if (!name) { toast("名前を入れてね🙏", "coral"); return; }
+    if (isNaN(kcal) || kcal < 0) { toast("カロリーを入れてね🙏", "coral"); return; }
+    state.customFoods.push({ id: "cf_" + uid(), name, emoji, kcal });
+    save(); render();
+    toast(`✅ ${emoji} ${name} を追加！`, "mint");
+  };
+  view.querySelectorAll("[data-cfdel]").forEach((b) => {
+    b.onclick = () => {
+      const target = state.customFoods.find((f) => f.id === b.dataset.cfdel);
+      state.customFoods = state.customFoods.filter((f) => f.id !== b.dataset.cfdel);
+      if (target) state.favoriteFoods = state.favoriteFoods.filter((n) => n !== target.name);
+      save(); render();
+    };
+  });
+
+  // ⚖️ 体重チャート 追加・削除
+  const wAdd = document.getElementById("wAdd");
+  if (wAdd) wAdd.onclick = () => {
+    const kg = parseFloat(document.getElementById("wkg").value);
+    if (!kg || kg < 20 || kg > 300) { toast("体重を正しく入れてね🙏", "coral"); return; }
+    state.weights.push({ id: uid(), date: ymd(), kg: Math.round(kg * 10) / 10, memo: "", ts: Date.now() });
+    p.weightKg = kg;
+    save(); render();
+    toast(`⚖️ ${kg}kg 記録したよ`, "mint");
+  };
+  view.querySelectorAll("[data-wdel]").forEach((b) => {
+    b.onclick = () => {
+      state.weights = state.weights.filter((w) => w.id !== b.dataset.wdel);
+      save(); render();
+    };
+  });
+}
+
+/* ---------- 📈 体重折れ線グラフ ---------- */
+function renderWeightChart(days) {
+  const data = weightTrendData(days);
+  if (data.length < 2) {
+    return `<div class="empty" style="padding:14px 0;font-size:13px">📈 体重を <b>2回以上</b> 記録するとグラフが出るよ</div>`;
+  }
+  const w = 320, h = 160, pad = 26;
+  const kgs = data.map((d) => d.kg);
+  const minKg = Math.min(...kgs) - 0.4;
+  const maxKg = Math.max(...kgs) + 0.4;
+  const range = Math.max(0.5, maxKg - minKg);
+  const tsMin = data[0].ts;
+  const tsMax = data[data.length - 1].ts;
+  const tsRange = Math.max(1, tsMax - tsMin);
+  const pts = data.map((d) => {
+    const x = pad + ((d.ts - tsMin) / tsRange) * (w - pad * 2);
+    const y = pad + ((maxKg - d.kg) / range) * (h - pad * 2);
+    return { x, y, kg: d.kg, date: d.date };
+  });
+  const linePath = pts.map((p, i) => `${i ? "L" : "M"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
+  const areaPath = linePath + ` L${pts[pts.length-1].x.toFixed(1)},${h-pad} L${pts[0].x.toFixed(1)},${h-pad} Z`;
+  return `
+    <svg class="weight-chart" viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none" style="width:100%;height:160px">
+      <line x1="${pad}" y1="${pad}" x2="${pad}" y2="${h - pad}" stroke="var(--line)" />
+      <line x1="${pad}" y1="${h - pad}" x2="${w - pad}" y2="${h - pad}" stroke="var(--line)" />
+      <path d="${areaPath}" fill="var(--mint)" opacity="0.18"/>
+      <path d="${linePath}" fill="none" stroke="var(--mint-dark)" stroke-width="2.5" stroke-linejoin="round"/>
+      ${pts.map((p) => `<circle cx="${p.x}" cy="${p.y}" r="3" fill="var(--mint-dark)"/>`).join("")}
+      <text x="${w - pad}" y="${pad - 4}" font-size="10" fill="var(--ink-soft)" text-anchor="end">${maxKg.toFixed(1)}kg</text>
+      <text x="${w - pad}" y="${h - pad + 13}" font-size="10" fill="var(--ink-soft)" text-anchor="end">${minKg.toFixed(1)}kg</text>
+    </svg>
+  `;
 }
 function hourOpts(sel) {
   let s = "";
@@ -927,6 +1923,358 @@ function hourOpts(sel) {
 }
 function snackCount(action) {
   return state.snacks.filter((s) => s.date === ymd() && s.action === action).length;
+}
+
+/* ============================================================
+ * ❓ ヘルプ・使い方・ご意見
+ * ============================================================ */
+// Supabase 設定（publishable key はクライアントに埋め込み前提。RLS で保護）
+const SUPABASE_URL = "https://fnboarzssteuzjehfdfx.supabase.co/rest/v1";
+const SUPABASE_KEY = "sb_publishable_sc-9RW6nzBsRulX1tNA2Hw_rgBcQKkr";
+const FEEDBACK_TABLE = "feedback";
+const APP_VERSION = "v1";
+const FEEDBACK_CATEGORIES = [
+  { id: "good",    emoji: "💚", label: "良かった点・感想" },
+  { id: "ux",      emoji: "🤔", label: "使いにくい・改善希望" },
+  { id: "bug",     emoji: "🐛", label: "バグ・不具合" },
+  { id: "feature", emoji: "💡", label: "新機能リクエスト" },
+  { id: "other",   emoji: "📮", label: "その他" },
+];
+let helpSection = "usage"; // "usage" | "faq" | "feedback"
+let feedbackDraft = { category: "good", rating: 0, text: "", contact: "" };
+
+function openHelp() {
+  if (currentTab !== "help") previousTab = currentTab;
+  currentTab = "help";
+  render();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+function closeHelp() {
+  currentTab = previousTab && previousTab !== "help" ? previousTab : "home";
+  render();
+}
+
+function renderHelp() {
+  view.innerHTML = `
+    <div class="help-bar">
+      <button class="help-back" id="helpBack">← もどる</button>
+      <h2 class="help-title">❓ ヘルプ・ご意見</h2>
+    </div>
+    <div class="seg help-seg">
+      <button class="seg-btn ${helpSection==="usage"?"active":""}" data-help="usage">📖 使い方</button>
+      <button class="seg-btn ${helpSection==="faq"?"active":""}" data-help="faq">❓ FAQ</button>
+      <button class="seg-btn ${helpSection==="feedback"?"active":""}" data-help="feedback">💌 ご意見</button>
+    </div>
+    ${helpSection === "usage" ? renderUsageSection()
+      : helpSection === "faq" ? renderFAQSection()
+      : renderFeedbackSection()}
+  `;
+  document.getElementById("helpBack").onclick = closeHelp;
+  view.querySelectorAll("[data-help]").forEach((b) => {
+    b.onclick = () => { helpSection = b.dataset.help; render(); };
+  });
+  if (helpSection === "feedback") bindFeedbackForm();
+}
+
+const USAGE_STEPS = [
+  { t: "🏠 ホームで今日をチェック",
+    d: "今日の消費カロリーと達成リングを一目で確認。下の「クイック記録」をタップすれば1〜2手で運動を記録できます。" },
+  { t: "🏃 運動を記録する",
+    d: "運動タブで種類と時間を選ぶだけ。消費カロリーは「METs × 体重 × 時間」で自動計算。メモ欄に距離や体調も残せます。" },
+  { t: "🍽️ 食事を記録する",
+    d: "食事タブで写真かカロリーボタンから記録。「今日のバランス」で摂取と消費の差し引きが見えます。" },
+  { t: "🏆 スタンプ・連続記録",
+    d: "目標カロリーを達成した日にトロフィー🏆が押されます。スタンプタブでカレンダー・グラフ・連続日数を確認。" },
+  { t: "🔔 あるるんアラーム",
+    d: "設定 → あるるんアラーム → 開始時刻と間隔を決めて「▶ スタート」。停止ボタンを押すまで「みてるよ」と鳴り続けます。" },
+  { t: "🍪 お菓子ナッジ",
+    d: "「がまんした✊」→ えらいぞー！／「食べちゃった🍪」→ のーーー！と声で反応。間食のクセを見える化します。" },
+  { t: "💾 バックアップ・機種変",
+    d: "設定 → データ → 💾バックアップ で .json を保存しておけば、新しい端末でも 📥復元 から元通り。記録はすべて端末内に保存され、サーバーには送信されません。" },
+];
+function renderUsageSection() {
+  return `
+    <div class="card">
+      <h3 class="card-title">📖 はじめての方へ・使い方ガイド</h3>
+      ${USAGE_STEPS.map((s, i) => `
+        <div class="usage-step">
+          <div class="n">${i + 1}</div>
+          <div class="body"><div class="t">${s.t}</div><div class="d">${s.d}</div></div>
+        </div>`).join("")}
+    </div>
+    <div class="card">
+      <h3 class="card-title">💡 ちょっとしたコツ</h3>
+      <div class="note" style="line-height:1.8">
+        ・ホーム画面に追加すると、アプリのように1タップで開けます（PWA）<br>
+        ・ホームの<b>クイック記録</b>をタップ→時間プリセットで最速2タップ記録<br>
+        ・記録は<b>後から「✕」で削除</b>できます（食事も同じ）<br>
+        ・声の高さ・速さは <b>設定 → あるるんアラーム</b> で調整できます<br>
+        ・写真は端末内に保存されるので、たくさん撮ると容量を圧迫します🙏
+      </div>
+    </div>
+  `;
+}
+
+const FAQ_LIST = [
+  { q: "データはどこに保存されますか？",
+    a: "すべてこの端末の中（ブラウザのlocalStorage）にだけ保存されます。サーバーには一切送られません。ログインも不要です。" },
+  { q: "機種変するとデータは消えますか？",
+    a: "そのままだと消えます。<b>設定 → データ → 💾バックアップ</b>で .json を保存し、新しい端末で <b>📥復元</b> から読み込めば元通りです。" },
+  { q: "ブラウザを変えるとデータは引き継がれますか？",
+    a: "引き継がれません（Safari と Chrome は別々の保存領域です）。バックアップ.json で移してください。" },
+  { q: "アラームが鳴らない／止まった",
+    a: "スマホがスリープ・別アプリに切り替わると音が制限される場合があります。最初に <b>「🔊 声をためす」</b> を押してブラウザに音声許可をしておくと安定します。" },
+  { q: "通知が来ない",
+    a: "ブラウザの通知許可をオンにしてください。iOSのSafariは「ホーム画面に追加」してから通知許可すると鳴りやすくなります。" },
+  { q: "写真が保存できない／重い",
+    a: "端末容量がいっぱいの可能性があります。古い食事の写真を削除するか、写真なしで記録すれば残せます。写真は自動で約640pxに縮小して保存しています。" },
+  { q: "カロリー計算は正確ですか？",
+    a: "<b>消費</b>＝METs × 体重 × 時間 × 1.05 の目安値です。<b>摂取</b>は一般的な食品の参考値です。あくまで習慣化のための「ものさし」としてご利用ください。" },
+  { q: "「のーーー」って何？",
+    a: "お菓子を食べちゃったときに、あるるんが <b>「のーーー（やめてー）」</b> と切なくつぶやく声です。罪悪感をユーモアに変えるための演出です🍪" },
+  { q: "アンインストールしても大丈夫？",
+    a: "ホーム画面のアイコンを消すだけならOKですが、ブラウザの履歴やデータを完全に消すと記録も消えます。<b>必ず事前にバックアップ</b>を取ってください。" },
+  { q: "費用はかかりますか？",
+    a: "完全に無料で、広告も課金もありません。" },
+];
+function renderFAQSection() {
+  return `
+    <div class="card">
+      <h3 class="card-title">❓ よくある質問</h3>
+      ${FAQ_LIST.map((f) => `
+        <details class="faq-item">
+          <summary>${escapeHtml(f.q)}</summary>
+          <div class="a">${f.a}</div>
+        </details>`).join("")}
+    </div>
+  `;
+}
+
+function renderFeedbackSection() {
+  const d = feedbackDraft;
+  const history = (state.feedback || []).slice().reverse().slice(0, 5);
+  return `
+    <div class="card">
+      <h3 class="card-title">💌 ご意見・お客様の声を送る</h3>
+      <div class="note" style="margin-bottom:14px;line-height:1.7">
+        あなたの一言が「あるるん」を育てます🌱<br>
+        どんな小さなことでもOK。気になった点・好きな機能・あったらいいなを教えてください。
+      </div>
+
+      <div class="field">
+        <label>カテゴリ</label>
+        <div class="cat-grid">
+          ${FEEDBACK_CATEGORIES.map((c) => `
+            <button class="cat-opt ${c.id === d.category ? "active" : ""}" data-cat="${c.id}">
+              <span class="e">${c.emoji}</span><span>${c.label}</span>
+            </button>`).join("")}
+        </div>
+      </div>
+
+      <div class="field">
+        <label>このアプリのおすすめ度（任意）</label>
+        <div class="rating-row">
+          ${[1,2,3,4,5].map((n) => `<button data-star="${n}" class="${n <= d.rating ? "on" : ""}" aria-label="${n}つ星">⭐</button>`).join("")}
+        </div>
+      </div>
+
+      <div class="field">
+        <label>ご意見・ご感想（自由記述）</label>
+        <textarea id="fbText" placeholder="例: スタンプが集まると嬉しい。/ 食事の写真を後から見たい。/ アラーム音をもっと優しくしてほしい。">${escapeHtml(d.text)}</textarea>
+      </div>
+
+      <div class="field" style="margin-bottom:6px">
+        <label>返信用の連絡先（任意・メール／X など）</label>
+        <input type="text" id="fbContact" value="${escapeHtml(d.contact)}" placeholder="返事がほしい場合のみ" />
+      </div>
+
+      <div class="fb-actions">
+        <button class="btn btn-primary btn-sm" id="fbSend">💌 送信する</button>
+        <button class="btn btn-ghost btn-sm" id="fbCopy">📋 内容をコピー</button>
+      </div>
+      <div class="fb-dest">
+        ご意見は<b>あるるんの開発者</b>にすぐ届きます🌱<br>
+        送信にはインターネット接続が必要です。
+      </div>
+    </div>
+
+    ${history.length ? `
+    <div class="card">
+      <h3 class="card-title">📨 送信済みのご意見（最新5件）</h3>
+      ${history.map((f) => {
+        const c = FEEDBACK_CATEGORIES.find((x) => x.id === f.category) || FEEDBACK_CATEGORIES[4];
+        const dt = new Date(f.ts);
+        const when = `${dt.getFullYear()}/${pad2(dt.getMonth()+1)}/${pad2(dt.getDate())} ${pad2(dt.getHours())}:${pad2(dt.getMinutes())}`;
+        const badge = f.status === "copied"
+          ? `<span class="fb-badge copied">コピー済</span>`
+          : f.status === "sent_supabase"
+            ? `<span class="fb-badge">送信済み</span>`
+            : `<span class="fb-badge">メール送信</span>`;
+        return `<div class="fb-hist-item">
+          <span class="e">${c.emoji}</span>
+          <div class="main">
+            <div class="t">${escapeHtml(f.text || "(本文なし)")}</div>
+            <div class="s">${escapeHtml(c.label)} ・ ${when}${f.rating ? ` ・ ${"⭐".repeat(f.rating)}` : ""}</div>
+          </div>
+          ${badge}
+        </div>`;
+      }).join("")}
+    </div>` : ""}
+  `;
+}
+
+function bindFeedbackForm() {
+  view.querySelectorAll("[data-cat]").forEach((b) => {
+    b.onclick = () => { feedbackDraft.category = b.dataset.cat; render(); };
+  });
+  view.querySelectorAll("[data-star]").forEach((b) => {
+    b.onclick = () => {
+      const n = parseInt(b.dataset.star, 10);
+      feedbackDraft.rating = feedbackDraft.rating === n ? 0 : n;
+      render();
+    };
+  });
+  const ta = document.getElementById("fbText");
+  if (ta) ta.oninput = () => { feedbackDraft.text = ta.value; };
+  const ct = document.getElementById("fbContact");
+  if (ct) ct.oninput = () => { feedbackDraft.contact = ct.value; };
+  const send = document.getElementById("fbSend");
+  if (send) send.onclick = sendFeedbackToSupabase;
+  const copy = document.getElementById("fbCopy");
+  if (copy) copy.onclick = copyFeedback;
+}
+
+function buildFeedbackBody(fb) {
+  const cat = FEEDBACK_CATEGORIES.find((c) => c.id === fb.category) || FEEDBACK_CATEGORIES[4];
+  const now = new Date();
+  const when = `${now.getFullYear()}/${pad2(now.getMonth()+1)}/${pad2(now.getDate())} ${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
+  const lines = [
+    "【slimmate ご意見・フィードバック】",
+    "━━━━━━━━━━━━━━━━━",
+    `日時　　: ${when}`,
+    `カテゴリ: ${cat.emoji} ${cat.label}`,
+  ];
+  if (fb.rating) lines.push(`おすすめ度: ${"★".repeat(fb.rating)}${"☆".repeat(5 - fb.rating)}`);
+  lines.push(`連絡先　: ${fb.contact ? fb.contact : "(なし)"}`);
+  lines.push("", "【内容】", fb.text || "(本文なし)", "");
+  lines.push("━━━━━━━━━━━━━━━━━");
+  lines.push(`端末　　: ${navigator.userAgent.substring(0, 90)}`);
+  lines.push("※ slimmate アプリから送信");
+  return lines.join("\n");
+}
+
+function persistFeedback(status) {
+  const entry = {
+    id: uid(),
+    ts: Date.now(),
+    category: feedbackDraft.category,
+    rating: feedbackDraft.rating,
+    text: (feedbackDraft.text || "").trim(),
+    contact: (feedbackDraft.contact || "").trim(),
+    status,
+  };
+  state.feedback = state.feedback || [];
+  state.feedback.push(entry);
+  save();
+}
+
+function validateFeedback() {
+  const t = (feedbackDraft.text || "").trim();
+  if (!t) { toast("ご意見の内容を入力してね🙏", "coral"); return false; }
+  if (t.length < 3) { toast("もう少し詳しく書いてもらえると嬉しい！", "coral"); return false; }
+  return true;
+}
+
+async function sendFeedbackToSupabase() {
+  if (!validateFeedback()) return;
+  const sendBtn = document.getElementById("fbSend");
+  if (sendBtn) { sendBtn.disabled = true; sendBtn.textContent = "送信中..."; }
+  const payload = {
+    category: feedbackDraft.category,
+    rating: feedbackDraft.rating || null,
+    message: (feedbackDraft.text || "").trim(), // テーブルのカラム名は message
+    contact: (feedbackDraft.contact || "").trim() || null,
+    user_agent: (navigator.userAgent || "").substring(0, 200),
+    app_version: APP_VERSION,
+  };
+  try {
+    const res = await fetch(`${SUPABASE_URL}/${FEEDBACK_TABLE}`, {
+      method: "POST",
+      headers: {
+        "apikey": SUPABASE_KEY,
+        "Authorization": `Bearer ${SUPABASE_KEY}`,
+        "Content-Type": "application/json",
+        "Prefer": "return=minimal",
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const errTxt = await res.text().catch(() => "");
+      throw new Error(`HTTP ${res.status} ${errTxt}`);
+    }
+    clearFeedbackError();
+    persistFeedback("sent_supabase");
+    toast("ありがとう！ご意見を送信したよ💌✨", "mint");
+    feedbackDraft = { category: "good", rating: 0, text: "", contact: "" };
+    setTimeout(render, 400);
+  } catch (e) {
+    console.error("Supabase POST failed:", e);
+    const msg = String(e && e.message || e);
+    showFeedbackError(msg);
+    if (/HTTP 4\d\d/.test(msg)) {
+      toast("送信できなかったよ🙏 下のエラー欄を見て", "coral");
+    } else {
+      toast("送信できなかったよ🙏 オフラインかも。「コピー」して後で送ってね", "coral");
+    }
+    if (sendBtn) { sendBtn.disabled = false; sendBtn.textContent = "💌 送信する"; }
+  }
+}
+function showFeedbackError(msg) {
+  const host = document.querySelector(".fb-dest");
+  if (!host) return;
+  let box = document.getElementById("fbErrBox");
+  if (!box) {
+    box = document.createElement("div");
+    box.id = "fbErrBox";
+    box.style.cssText = "background:var(--coral-soft);color:var(--coral);padding:12px 14px;border-radius:12px;font-size:11px;font-weight:700;margin-top:10px;line-height:1.6;word-break:break-all;white-space:pre-wrap;";
+    host.parentNode.insertBefore(box, host.nextSibling);
+  }
+  box.textContent = "⚠️ エラー全文:\n" + msg;
+}
+function clearFeedbackError() {
+  const box = document.getElementById("fbErrBox");
+  if (box) box.remove();
+}
+
+async function copyFeedback() {
+  if (!validateFeedback()) return;
+  const body = buildFeedbackBody(feedbackDraft);
+  // クリップボードには本文だけ入れる（開発者の連絡先は表に出さない）
+  const text = body;
+  let ok = false;
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+      ok = true;
+    } else {
+      // フォールバック（古いブラウザ）
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      ok = document.execCommand("copy");
+      ta.remove();
+    }
+  } catch {}
+  if (ok) {
+    persistFeedback("copied");
+    toast(`コピーしたよ📋 メールアプリに貼り付けて送ってね！`, "mint");
+    feedbackDraft = { category: "good", rating: 0, text: "", contact: "" };
+    setTimeout(render, 400);
+  } else {
+    toast("コピーできなかったよ🙏 メーラーボタンも試してみて！", "coral");
+  }
 }
 
 /* ---------- お菓子ナッジ スケジューラ ---------- */
@@ -990,7 +2338,7 @@ function showNudgeCard(msg) {
         praiseResisted(); // 「えらいぞー」
         toast("えらい！その調子！🎉", "mint");
       } else {
-        onAteSnack(); // 「もーーーーーーーーーー」
+        onAteSnack(); // 「のーーーーーーーーーー」
       }
       if (currentTab === "settings") render();
     };
@@ -1103,9 +2451,9 @@ function playScoldJingle() {
 }
 function scoldAte() {
   playScoldJingle();
-  speakCute("もーーーーーーーーーー"); // えらいぞーと同じ声
+  speakCute("のーーーーーーーーーー"); // えらいぞーと同じ声
 }
-// 食べちゃった共通処理：記録 →「もーーーーーーーーーー」→（設定ON時）あるるんが見張る
+// 食べちゃった共通処理：記録 →「のーーーーーーーーーー」→（設定ON時）あるるんが見張る
 function onAteSnack() {
   state.snacks.push({ date: ymd(), action: "ate", ts: Date.now() });
   save();
@@ -1115,9 +2463,9 @@ function onAteSnack() {
     state.alarmRun = { active: true, nextFireTs: Date.now() + Math.max(1, state.profile.alarm.intervalMin) * 60000 };
     save();
     updateAlarmBanner();
-    toast("もーーーーーーーーーー！あるるんが見張るよ🔔", "coral");
+    toast("のーーーーーーーーーー！あるるんが見張るよ🔔", "coral");
   } else {
-    toast("もーーーーーーーーーー！記録しといたよ🌱", "coral");
+    toast("のーーーーーーーーーー！記録しといたよ🌱", "coral");
   }
 }
 
@@ -1155,6 +2503,7 @@ function stopArun() {
   if (currentTab === "settings") render();
 }
 function tickAlarm() {
+  checkCalls();
   const r = state.alarmRun;
   if (!r.active) return;
   if (Date.now() >= r.nextFireTs) {
@@ -1167,6 +2516,54 @@ function tickAlarm() {
     save();
   }
   refreshAlarmSub();
+}
+
+/* ---------- ⏰ モーニング/ナイトコール ---------- */
+function checkCalls() {
+  const now = new Date();
+  const h = now.getHours();
+  const m = now.getMinutes();
+  const today = ymd();
+  const mc = state.profile.morningCall;
+  const nc = state.profile.nightCall;
+  if (mc && mc.enabled
+    && state.callRun.lastMorningYmd !== today
+    && (h > mc.hour || (h === mc.hour && m >= mc.min))
+    && h - mc.hour <= 3) { // 3時間以上過ぎていたらスキップ
+    fireMorningCall();
+    state.callRun.lastMorningYmd = today;
+    save();
+  }
+  if (nc && nc.enabled
+    && state.callRun.lastNightYmd !== today
+    && (h > nc.hour || (h === nc.hour && m >= nc.min))) {
+    fireNightCall();
+    state.callRun.lastNightYmd = today;
+    save();
+  }
+}
+function fireMorningCall() {
+  const goal = state.profile.dailyGoalKcal;
+  const msg = `おはよ☀️ 今日も ${goal}kcal がんばろうね！`;
+  if ("Notification" in window && Notification.permission === "granted") {
+    try { new Notification("🌞 あるるん モーニングコール", { body: msg, icon: "icon.svg" }); } catch {}
+  }
+  ensureAudio();
+  playPraiseJingle();
+  speakCute("おはよう、いっしょにがんばろうね");
+  toast(msg, "mint");
+}
+function fireNightCall() {
+  const kcal = kcalOn(ymd());
+  const ok = isAchieved(ymd());
+  const msg = ok ? `🎉 今日は目標達成！えらいぞ！` : `🌙 今日は${kcal}kcal。明日もまた一緒にがんばろう！`;
+  if ("Notification" in window && Notification.permission === "granted") {
+    try { new Notification("🌙 あるるん ナイトコール", { body: msg, icon: "icon.svg" }); } catch {}
+  }
+  ensureAudio();
+  if (ok) playPraiseJingle(); else playCuteJingle();
+  speakCute(ok ? "今日もえらかったね、おやすみ" : "おつかれさま、明日もがんばろう");
+  toast(msg, ok ? "mint" : "coral");
 }
 function updateAlarmBanner() {
   let el = document.getElementById("alarmBanner");
@@ -1354,10 +2751,20 @@ function importData(file) {
 
 /* ---------- イベント ---------- */
 document.querySelectorAll(".tab").forEach((t) => {
-  t.onclick = () => { currentTab = t.dataset.tab; render(); };
+  t.onclick = () => {
+    currentTab = t.dataset.tab;
+    // 画面遷移時はサブ状態をリセット
+    showGallery = false;
+    editingLogId = null; editingLogDraft = null;
+    editingFoodId = null; editingFoodDraft = null;
+    render();
+  };
 });
+const helpBtnEl = document.getElementById("helpBtn");
+if (helpBtnEl) helpBtnEl.onclick = () => { currentTab === "help" ? closeHelp() : openHelp(); };
 
 /* ---------- 起動 ---------- */
+applyTheme();
 render();
 restartNudgeScheduler();
 setInterval(tickAlarm, 1000); // あるるんアラームの監視（1秒ごと）
